@@ -1483,6 +1483,51 @@ test("prompt preserves structured ACP prompt blocks through the queue owner", as
   });
 });
 
+test("exec rejects structured image prompts with invalid mime types", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = path.join(homeDir, "workspace");
+    await fs.mkdir(cwd, { recursive: true });
+
+    const result = await runCli(
+      ["--agent", MOCK_AGENT_COMMAND, "--cwd", cwd, "--format", "quiet", "exec"],
+      homeDir,
+      {
+        stdin: JSON.stringify([
+          { type: "text", text: "inspect-prompt" },
+          { type: "image", mimeType: "application/json", data: "aW1hZ2U=" },
+        ]),
+      },
+    );
+
+    assert.equal(result.code, 2);
+    assert.match(
+      `${result.stdout}\n${result.stderr}`,
+      /image block mimeType must start with image\//i,
+    );
+  });
+});
+
+test("exec rejects structured image prompts with invalid base64 payloads", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = path.join(homeDir, "workspace");
+    await fs.mkdir(cwd, { recursive: true });
+
+    const result = await runCli(
+      ["--agent", MOCK_AGENT_COMMAND, "--cwd", cwd, "--format", "quiet", "exec"],
+      homeDir,
+      {
+        stdin: JSON.stringify([
+          { type: "text", text: "inspect-prompt" },
+          { type: "image", mimeType: "image/png", data: "%%%" },
+        ]),
+      },
+    );
+
+    assert.equal(result.code, 2);
+    assert.match(`${result.stdout}\n${result.stderr}`, /image block data must be valid base64/i);
+  });
+});
+
 test("prompt subcommand accepts --file without being consumed by parent command", async () => {
   await withTempHome(async (homeDir) => {
     const cwd = path.join(homeDir, "workspace");
