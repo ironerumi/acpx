@@ -38,7 +38,12 @@ import {
   type NormalizedOutputError,
 } from "./error-normalization.js";
 import { flushPerfMetricsCapture, installPerfMetricsCapture } from "./perf-metrics-capture.js";
-import { mergePromptSourceWithText, parsePromptSource, textPrompt } from "./prompt-content.js";
+import {
+  mergePromptSourceWithText,
+  parsePromptSource,
+  PromptInputValidationError,
+  textPrompt,
+} from "./prompt-content.js";
 import { runQueueOwnerFromEnv } from "./queue-owner-env.js";
 import {
   DEFAULT_HISTORY_LIMIT,
@@ -90,35 +95,42 @@ async function readPrompt(
   filePath: string | undefined,
   cwd: string,
 ): Promise<import("./types.js").PromptInput> {
-  if (filePath) {
-    const source =
-      filePath === "-"
-        ? await readPromptInputFromStdin()
-        : await fs.readFile(path.resolve(cwd, filePath), "utf8");
-    const prompt = mergePromptSourceWithText(source, promptParts.join(" "));
-    if (prompt.length === 0) {
-      throw new InvalidArgumentError("Prompt from --file is empty");
+  try {
+    if (filePath) {
+      const source =
+        filePath === "-"
+          ? await readPromptInputFromStdin()
+          : await fs.readFile(path.resolve(cwd, filePath), "utf8");
+      const prompt = mergePromptSourceWithText(source, promptParts.join(" "));
+      if (prompt.length === 0) {
+        throw new InvalidArgumentError("Prompt from --file is empty");
+      }
+      return prompt;
     }
+
+    const joined = promptParts.join(" ").trim();
+    if (joined.length > 0) {
+      return textPrompt(joined);
+    }
+
+    if (process.stdin.isTTY) {
+      throw new InvalidArgumentError(
+        "Prompt is required (pass as argument, --file, or pipe via stdin)",
+      );
+    }
+
+    const prompt = parsePromptSource(await readPromptInputFromStdin());
+    if (prompt.length === 0) {
+      throw new InvalidArgumentError("Prompt from stdin is empty");
+    }
+
     return prompt;
+  } catch (error) {
+    if (error instanceof PromptInputValidationError) {
+      throw new InvalidArgumentError(error.message);
+    }
+    throw error;
   }
-
-  const joined = promptParts.join(" ").trim();
-  if (joined.length > 0) {
-    return textPrompt(joined);
-  }
-
-  if (process.stdin.isTTY) {
-    throw new InvalidArgumentError(
-      "Prompt is required (pass as argument, --file, or pipe via stdin)",
-    );
-  }
-
-  const prompt = parsePromptSource(await readPromptInputFromStdin());
-  if (prompt.length === 0) {
-    throw new InvalidArgumentError("Prompt from stdin is empty");
-  }
-
-  return prompt;
 }
 
 function applyPermissionExitCode(result: {
@@ -1609,9 +1621,7 @@ Examples:
             defaultCode: "USAGE",
             origin: "cli",
           });
-          if (requestedOutputPolicy.format === "json") {
-            await emitRequestedError(error, normalized, requestedOutputPolicy);
-          }
+          await emitRequestedError(error, normalized, requestedOutputPolicy);
           process.exit(exitCodeForOutputErrorCode(normalized.code));
         }
 

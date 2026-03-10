@@ -2,11 +2,33 @@ import type { ContentBlock } from "@agentclientprotocol/sdk";
 
 export type PromptInput = ContentBlock[];
 
+export class PromptInputValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PromptInputValidationError";
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
   return value as Record<string, unknown>;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isBase64Data(value: string): boolean {
+  if (value.length === 0 || value.length % 4 !== 0) {
+    return false;
+  }
+  return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
+}
+
+function isImageMimeType(value: string): boolean {
+  return /^image\/[A-Za-z0-9.+-]+$/i.test(value);
 }
 
 function isTextBlock(value: unknown): value is Extract<ContentBlock, { type: "text" }> {
@@ -18,8 +40,10 @@ function isImageBlock(value: unknown): value is Extract<ContentBlock, { type: "i
   const record = asRecord(value);
   return (
     record?.type === "image" &&
-    typeof record.mimeType === "string" &&
-    typeof record.data === "string"
+    isNonEmptyString(record.mimeType) &&
+    isImageMimeType(record.mimeType) &&
+    typeof record.data === "string" &&
+    isBase64Data(record.data)
   );
 }
 
@@ -29,7 +53,7 @@ function isResourceLinkBlock(
   const record = asRecord(value);
   return (
     record?.type === "resource_link" &&
-    typeof record.uri === "string" &&
+    isNonEmptyString(record.uri) &&
     (record.title === undefined || typeof record.title === "string") &&
     (record.name === undefined || typeof record.name === "string")
   );
@@ -37,7 +61,7 @@ function isResourceLinkBlock(
 
 function isResourcePayload(value: unknown): boolean {
   const record = asRecord(value);
-  if (!record || typeof record.uri !== "string") {
+  if (!record || !isNonEmptyString(record.uri)) {
     return false;
   }
   return record.text === undefined || typeof record.text === "string";
@@ -55,6 +79,55 @@ function isContentBlock(value: unknown): value is ContentBlock {
     isResourceLinkBlock(value) ||
     isResourceBlock(value)
   );
+}
+
+function getContentBlockValidationError(value: unknown, index: number): string | undefined {
+  const record = asRecord(value);
+  if (!record || typeof record.type !== "string") {
+    return `prompt[${index}] must be an ACP content block object`;
+  }
+
+  switch (record.type) {
+    case "text":
+      return typeof record.text === "string"
+        ? undefined
+        : `prompt[${index}] text block must include a string text field`;
+    case "image":
+      if (!isNonEmptyString(record.mimeType)) {
+        return `prompt[${index}] image block must include a non-empty mimeType`;
+      }
+      if (!isImageMimeType(record.mimeType)) {
+        return `prompt[${index}] image block mimeType must start with image/`;
+      }
+      if (typeof record.data !== "string" || record.data.length === 0) {
+        return `prompt[${index}] image block must include non-empty base64 data`;
+      }
+      if (!isBase64Data(record.data)) {
+        return `prompt[${index}] image block data must be valid base64`;
+      }
+      return undefined;
+    case "resource_link":
+      if (!isNonEmptyString(record.uri)) {
+        return `prompt[${index}] resource_link block must include a non-empty uri`;
+      }
+      if (record.title !== undefined && typeof record.title !== "string") {
+        return `prompt[${index}] resource_link block title must be a string when present`;
+      }
+      if (record.name !== undefined && typeof record.name !== "string") {
+        return `prompt[${index}] resource_link block name must be a string when present`;
+      }
+      return undefined;
+    case "resource":
+      if (!asRecord(record.resource)) {
+        return `prompt[${index}] resource block must include a resource object`;
+      }
+      if (!isResourcePayload(record.resource)) {
+        return `prompt[${index}] resource block resource must include a non-empty uri and optional text`;
+      }
+      return undefined;
+    default:
+      return `prompt[${index}] has unsupported content block type ${JSON.stringify(record.type)}`;
+  }
 }
 
 export function isPromptInput(value: unknown): value is PromptInput {
@@ -76,8 +149,22 @@ function parseStructuredPrompt(source: string): PromptInput | undefined {
   }
   try {
     const parsed = JSON.parse(source) as unknown;
-    return isPromptInput(parsed) ? parsed : undefined;
-  } catch {
+    if (isPromptInput(parsed)) {
+      return parsed;
+    }
+    if (Array.isArray(parsed)) {
+      const detail =
+        parsed
+          .map((entry, index) => getContentBlockValidationError(entry, index))
+          .find((message) => message !== undefined) ??
+        "Structured prompt JSON must be an array of valid ACP content blocks";
+      throw new PromptInputValidationError(detail);
+    }
+    return undefined;
+  } catch (error) {
+    if (error instanceof PromptInputValidationError) {
+      throw error;
+    }
     return undefined;
   }
 }
