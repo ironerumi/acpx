@@ -169,6 +169,106 @@ test("integration: exec forwards model, allowed-tools, and max-turns in session/
   });
 });
 
+test("integration: exec --model calls session/set_model when agent advertises models", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const modelAgentCommand = `${MOCK_AGENT_COMMAND} --advertise-models`;
+
+    try {
+      const result = await runCli(
+        [
+          "--agent",
+          modelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "--format",
+          "json",
+          "--model",
+          "fast-model",
+          "exec",
+          "echo hello",
+        ],
+        homeDir,
+      );
+      assert.equal(result.code, 0, result.stderr);
+
+      const payloads = parseJsonRpcOutputLines(result.stdout);
+      const setModelRequest = payloads.find((payload) => payload.method === "session/set_model") as
+        | { params?: { modelId?: string } }
+        | undefined;
+      assert(setModelRequest, "expected session/set_model request in JSON-RPC output");
+      assert.equal(setModelRequest.params?.modelId, "fast-model");
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: exec --model skips session/set_model when agent does not advertise models", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+
+    try {
+      const result = await runCli(
+        [...baseAgentArgs(cwd), "--format", "json", "--model", "sonnet", "exec", "echo hello"],
+        homeDir,
+      );
+      assert.equal(result.code, 0, result.stderr);
+
+      const payloads = parseJsonRpcOutputLines(result.stdout);
+
+      // _meta.claudeCode.options.model should still be sent
+      const createRequest = payloads.find((payload) => payload.method === "session/new") as
+        | { params?: { _meta?: Record<string, unknown> } }
+        | undefined;
+      assert(createRequest, "expected session/new request");
+      assert.deepEqual((createRequest.params?._meta as Record<string, unknown>)?.claudeCode, {
+        options: { model: "sonnet" },
+      });
+
+      // session/set_model should NOT be called
+      const setModelRequest = payloads.find((payload) => payload.method === "session/set_model");
+      assert.equal(setModelRequest, undefined, "session/set_model should not be called");
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: exec --model warns on session/set_model failure but session continues", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const failModelAgentCommand = `${MOCK_AGENT_COMMAND} --set-session-model-fails`;
+
+    try {
+      const result = await runCli(
+        [
+          "--agent",
+          failModelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "--format",
+          "quiet",
+          "--model",
+          "bad-model",
+          "exec",
+          "echo hello",
+        ],
+        homeDir,
+      );
+      // Session should still succeed
+      assert.equal(result.code, 0, result.stderr);
+      assert.match(result.stdout, /hello/);
+      // Warning should appear in stderr
+      assert.match(result.stderr, /warning: failed to set model bad-model/);
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
 test("integration: perf metrics capture writes ndjson records for CLI runs", async () => {
   await withTempHome(async (homeDir) => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));

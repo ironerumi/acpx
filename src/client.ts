@@ -29,6 +29,7 @@ import {
   type WaitForTerminalExitResponse,
   type WriteTextFileRequest,
   type WriteTextFileResponse,
+  type SessionModelState,
 } from "@agentclientprotocol/sdk";
 import { isSessionUpdateNotification } from "./acp-jsonrpc.js";
 import {
@@ -79,6 +80,7 @@ type LoadSessionOptions = {
 export type SessionCreateResult = {
   sessionId: string;
   agentSessionId?: string;
+  models?: SessionModelState;
 };
 
 export type SessionLoadResult = {
@@ -1070,9 +1072,16 @@ export class AcpClient {
     }
 
     this.loadedSessionId = result.sessionId;
+
+    const requestedModel = this.options.sessionOptions?.model;
+    if (requestedModel && result.models) {
+      await this.trySetModel(result.sessionId, requestedModel, result.models);
+    }
+
     return {
       sessionId: result.sessionId,
       agentSessionId: extractRuntimeSessionId(result._meta),
+      models: result.models ?? undefined,
     };
   }
 
@@ -1112,6 +1121,12 @@ export class AcpClient {
     }
 
     this.loadedSessionId = sessionId;
+
+    const requestedModel = this.options.sessionOptions?.model;
+    if (requestedModel && response?.models) {
+      await this.trySetModel(sessionId, requestedModel, response.models);
+    }
+
     return {
       agentSessionId: extractRuntimeSessionId(response?._meta),
     };
@@ -1181,6 +1196,20 @@ export class AcpClient {
       configId,
       value,
     });
+  }
+
+  async trySetModel(sessionId: string, modelId: string, models: SessionModelState): Promise<void> {
+    try {
+      this.log(
+        `available models: ${models.availableModels.map((m) => m.modelId).join(", ")} (current: ${models.currentModelId})`,
+      );
+      const connection = this.getConnection();
+      await connection.unstable_setSessionModel({ sessionId, modelId });
+      this.log(`model set to ${modelId}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[acpx] warning: failed to set model ${modelId}: ${msg}\n`);
+    }
   }
 
   async cancel(sessionId: string): Promise<void> {

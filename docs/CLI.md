@@ -67,19 +67,22 @@ Notes:
 
 All global options:
 
-| Option                                   | Description                                    | Details                                                             |
-| ---------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------- |
-| `--agent <command>`                      | Raw ACP agent command (escape hatch)           | Do not combine with positional agent token.                         |
-| `--cwd <dir>`                            | Working directory                              | Defaults to current directory. Stored as absolute path for scoping. |
-| `--approve-all`                          | Auto-approve all permissions                   | Permission mode `approve-all`.                                      |
-| `--approve-reads`                        | Auto-approve reads/searches, prompt for others | Default permission mode.                                            |
-| `--deny-all`                             | Deny all permissions                           | Permission mode `deny-all`.                                         |
-| `--format <fmt>`                         | Output format                                  | `text` (default), `json`, `quiet`.                                  |
-| `--json-strict`                          | Strict JSON mode                               | Requires `--format json`; suppresses non-JSON stderr output.        |
-| `--non-interactive-permissions <policy>` | Non-TTY prompt policy                          | `deny` (default) or `fail` when approval prompt cannot be shown.    |
-| `--timeout <seconds>`                    | Max wait time for agent response               | Must be positive. Decimal seconds allowed.                          |
-| `--ttl <seconds>`                        | Queue owner idle TTL before shutdown           | Default `300`. `0` disables TTL.                                    |
-| `--verbose`                              | Enable verbose logs                            | Prints ACP/debug details to stderr.                                 |
+| Option                                   | Description                                    | Details                                                                                               |
+| ---------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `--agent <command>`                      | Raw ACP agent command (escape hatch)           | Do not combine with positional agent token.                                                           |
+| `--cwd <dir>`                            | Working directory                              | Defaults to current directory. Stored as absolute path for scoping.                                   |
+| `--approve-all`                          | Auto-approve all permissions                   | Permission mode `approve-all`.                                                                        |
+| `--approve-reads`                        | Auto-approve reads/searches, prompt for others | Default permission mode.                                                                              |
+| `--deny-all`                             | Deny all permissions                           | Permission mode `deny-all`.                                                                           |
+| `--format <fmt>`                         | Output format                                  | `text` (default), `json`, `quiet`.                                                                    |
+| `--json-strict`                          | Strict JSON mode                               | Requires `--format json`; suppresses non-JSON stderr output.                                          |
+| `--non-interactive-permissions <policy>` | Non-TTY prompt policy                          | `deny` (default) or `fail` when approval prompt cannot be shown.                                      |
+| `--timeout <seconds>`                    | Max wait time for agent response               | Must be positive. Decimal seconds allowed.                                                            |
+| `--ttl <seconds>`                        | Queue owner idle TTL before shutdown           | Default `300`. `0` disables TTL.                                                                      |
+| `--model <id>`                           | Set agent model                                | Requires agent-side support. Sent via `session/set_model` when the agent advertises available models. |
+| `--allowed-tools <tools>`                | Restrict allowed tools                         | Comma-separated list (e.g. `Read,Grep,Bash`).                                                         |
+| `--max-turns <n>`                        | Limit agent turns                              | Maximum number of turns the agent may take.                                                           |
+| `--verbose`                              | Enable verbose logs                            | Prints ACP/debug details to stderr.                                                                   |
 
 Permission flags are mutually exclusive. Using more than one of `--approve-all`, `--approve-reads`, `--deny-all` is a usage error.
 
