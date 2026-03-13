@@ -67,22 +67,22 @@ Notes:
 
 All global options:
 
-| Option                                   | Description                                    | Details                                                                                               |
-| ---------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `--agent <command>`                      | Raw ACP agent command (escape hatch)           | Do not combine with positional agent token.                                                           |
-| `--cwd <dir>`                            | Working directory                              | Defaults to current directory. Stored as absolute path for scoping.                                   |
-| `--approve-all`                          | Auto-approve all permissions                   | Permission mode `approve-all`.                                                                        |
-| `--approve-reads`                        | Auto-approve reads/searches, prompt for others | Default permission mode.                                                                              |
-| `--deny-all`                             | Deny all permissions                           | Permission mode `deny-all`.                                                                           |
-| `--format <fmt>`                         | Output format                                  | `text` (default), `json`, `quiet`.                                                                    |
-| `--json-strict`                          | Strict JSON mode                               | Requires `--format json`; suppresses non-JSON stderr output.                                          |
-| `--non-interactive-permissions <policy>` | Non-TTY prompt policy                          | `deny` (default) or `fail` when approval prompt cannot be shown.                                      |
-| `--timeout <seconds>`                    | Max wait time for agent response               | Must be positive. Decimal seconds allowed.                                                            |
-| `--ttl <seconds>`                        | Queue owner idle TTL before shutdown           | Default `300`. `0` disables TTL.                                                                      |
-| `--model <id>`                           | Set agent model                                | Requires agent-side support. Sent via `session/set_model` when the agent advertises available models. |
-| `--allowed-tools <tools>`                | Restrict allowed tools                         | Comma-separated list (e.g. `Read,Grep,Bash`).                                                         |
-| `--max-turns <n>`                        | Limit agent turns                              | Maximum number of turns the agent may take.                                                           |
-| `--verbose`                              | Enable verbose logs                            | Prints ACP/debug details to stderr.                                                                   |
+| Option                                   | Description                                    | Details                                                                                                                                   |
+| ---------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--agent <command>`                      | Raw ACP agent command (escape hatch)           | Do not combine with positional agent token.                                                                                               |
+| `--cwd <dir>`                            | Working directory                              | Defaults to current directory. Stored as absolute path for scoping.                                                                       |
+| `--approve-all`                          | Auto-approve all permissions                   | Permission mode `approve-all`.                                                                                                            |
+| `--approve-reads`                        | Auto-approve reads/searches, prompt for others | Default permission mode.                                                                                                                  |
+| `--deny-all`                             | Deny all permissions                           | Permission mode `deny-all`.                                                                                                               |
+| `--format <fmt>`                         | Output format                                  | `text` (default), `json`, `quiet`.                                                                                                        |
+| `--json-strict`                          | Strict JSON mode                               | Requires `--format json`; suppresses non-JSON stderr output.                                                                              |
+| `--non-interactive-permissions <policy>` | Non-TTY prompt policy                          | `deny` (default) or `fail` when approval prompt cannot be shown.                                                                          |
+| `--timeout <seconds>`                    | Max wait time for agent response               | Must be positive. Decimal seconds allowed.                                                                                                |
+| `--ttl <seconds>`                        | Queue owner idle TTL before shutdown           | Default `300`. `0` disables TTL.                                                                                                          |
+| `--model <id>`                           | Set agent model                                | Sent via generic ACP `session/set_model` when the agent advertises available models; also sent via `_meta.claudeCode.options` for Claude. |
+| `--allowed-tools <tools>`                | Restrict allowed tools                         | Comma-separated list (e.g. `Read,Grep,Bash`). **Claude-only:** sent via `_meta.claudeCode.options`; no generic ACP equivalent exists.     |
+| `--max-turns <n>`                        | Limit agent turns                              | Maximum number of turns the agent may take. **Claude-only:** sent via `_meta.claudeCode.options`; no generic ACP equivalent exists.       |
+| `--verbose`                              | Enable verbose logs                            | Prints ACP/debug details to stderr.                                                                                                       |
 
 Permission flags are mutually exclusive. Using more than one of `--approve-all`, `--approve-reads`, `--deny-all` is a usage error.
 
@@ -254,6 +254,23 @@ Behavior:
 - Calls ACP `session/set_config_option`.
 - Routes through queue-owner IPC when an owner is active.
 - Falls back to a direct client reconnect when no owner is running.
+- **`set model <id>`**: Intercepted to call `session/set_model` instead. This is because agents (e.g. droid) support `session/set_model` but not `session/set_config_option` for model changes.
+
+### Reasoning effort
+
+`set thought_level <value>` is the generic ACP path for controlling reasoning effort (e.g. `set thought_level high`). Currently **no agent implements the handler** — droid returns "Method not found", Claude ACP does not expose it.
+
+**Workaround:** Pass the `-r` flag directly in the agent command:
+
+```bash
+acpx --agent "droid exec -r high --output-format acp" exec 'your prompt'
+```
+
+Caveats:
+
+- `-r` is process-level: it does **not** persist on session resume (droid must restart).
+- `-r` and `--model` are orthogonal — both work and do not interfere with each other.
+- When agents implement `session/set_config_option` for `thought_level`, `set thought_level <value>` will work without acpx changes.
 
 ## `sessions` subcommand
 

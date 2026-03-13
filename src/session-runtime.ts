@@ -698,6 +698,7 @@ export async function createSession(options: SessionCreateOptions): Promise<Sess
         });
         let sessionId: string;
         let agentSessionId: string | undefined;
+        let sessionModels: import("./client.js").SessionCreateResult["models"];
 
         if (options.resumeSessionId) {
           if (!client.supportsLoadSession()) {
@@ -713,6 +714,7 @@ export async function createSession(options: SessionCreateOptions): Promise<Sess
             );
             sessionId = options.resumeSessionId;
             agentSessionId = normalizeRuntimeSessionId(loadedSession.agentSessionId);
+            sessionModels = loadedSession.models;
           } catch (error) {
             throw new Error(
               `Failed to resume ACP session ${options.resumeSessionId}: ${formatErrorMessage(error)}`,
@@ -728,8 +730,18 @@ export async function createSession(options: SessionCreateOptions): Promise<Sess
           );
           sessionId = createdSession.sessionId;
           agentSessionId = normalizeRuntimeSessionId(createdSession.agentSessionId);
+          sessionModels = createdSession.models;
         }
         const lifecycle = client.getAgentLifecycleSnapshot();
+
+        const acpx: SessionRecord["acpx"] = {};
+        if (sessionModels) {
+          acpx.current_model_id = sessionModels.currentModelId;
+          acpx.available_models = sessionModels.availableModels.map((m) => m.modelId);
+        }
+        if (options.sessionOptions?.model && sessionModels) {
+          acpx.current_model_id = options.sessionOptions.model;
+        }
 
         const now = isoNow();
         const record: SessionRecord = {
@@ -752,7 +764,7 @@ export async function createSession(options: SessionCreateOptions): Promise<Sess
           protocolVersion: client.initializeResult?.protocolVersion,
           agentCapabilities: client.initializeResult?.agentCapabilities,
           ...createSessionConversation(now),
-          acpx: {},
+          acpx,
         };
 
         await writeSessionRecord(record);
@@ -1088,6 +1100,13 @@ export async function setSessionConfigOption(
     const record = await resolveSessionRecord(options.sessionId);
     if (options.configId === "mode") {
       setDesiredModeId(record, options.value);
+    }
+    if (options.configId === "model") {
+      const acpx = record.acpx ?? {};
+      acpx.current_model_id = options.value;
+      record.acpx = acpx;
+    }
+    if (options.configId === "mode" || options.configId === "model") {
       await writeSessionRecord(record);
     }
     return {

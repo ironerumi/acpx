@@ -269,6 +269,127 @@ test("integration: exec --model warns on session/set_model failure but session c
   });
 });
 
+test("integration: set model routes through session/set_model and succeeds", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const modelAgentCommand = `${MOCK_AGENT_COMMAND} --advertise-models`;
+
+    try {
+      // Create session
+      const created = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "sessions", "new"],
+        homeDir,
+      );
+      assert.equal(created.code, 0, created.stderr);
+
+      // Switch model mid-session via set command (uses session/set_model internally)
+      const setResult = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "set", "model", "gpt-5.4"],
+        homeDir,
+      );
+      assert.equal(setResult.code, 0, setResult.stderr);
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: status shows model after session creation with --model", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const modelAgentCommand = `${MOCK_AGENT_COMMAND} --advertise-models`;
+
+    try {
+      // Create session with --model
+      const created = await runCli(
+        [
+          "--agent",
+          modelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "--model",
+          "gpt-5.4",
+          "sessions",
+          "new",
+        ],
+        homeDir,
+      );
+      assert.equal(created.code, 0, created.stderr);
+
+      // Check status JSON
+      const status = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "--format", "json", "status"],
+        homeDir,
+      );
+      assert.equal(status.code, 0, status.stderr);
+
+      const statusPayload = JSON.parse(status.stdout.trim()) as {
+        model?: string;
+        mode?: string;
+        availableModels?: string[];
+      };
+      assert.equal(statusPayload.model, "gpt-5.4");
+      assert(Array.isArray(statusPayload.availableModels), "expected availableModels array");
+
+      // Check status text
+      const statusText = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "status"],
+        homeDir,
+      );
+      assert.equal(statusText.code, 0, statusText.stderr);
+      assert.match(statusText.stdout, /model: gpt-5\.4/);
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: status shows updated model after set model", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const modelAgentCommand = `${MOCK_AGENT_COMMAND} --advertise-models`;
+
+    try {
+      // Create session with --model
+      const created = await runCli(
+        [
+          "--agent",
+          modelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "--model",
+          "fast-model",
+          "sessions",
+          "new",
+        ],
+        homeDir,
+      );
+      assert.equal(created.code, 0, created.stderr);
+
+      // Switch model
+      const setResult = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "set", "model", "gpt-5.4"],
+        homeDir,
+      );
+      assert.equal(setResult.code, 0, setResult.stderr);
+
+      // Check status JSON — should show updated model
+      const status = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "--format", "json", "status"],
+        homeDir,
+      );
+      assert.equal(status.code, 0, status.stderr);
+
+      const statusPayload = JSON.parse(status.stdout.trim()) as { model?: string };
+      assert.equal(statusPayload.model, "gpt-5.4");
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
 test("integration: perf metrics capture writes ndjson records for CLI runs", async () => {
   await withTempHome(async (homeDir) => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));

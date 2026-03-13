@@ -206,6 +206,11 @@ export async function runSessionSetConfigOptionDirect(
       if (options.configId === "mode") {
         setDesiredModeId(record, options.value);
       }
+      if (options.configId === "model") {
+        const acpx = record.acpx ?? {};
+        acpx.current_model_id = options.value;
+        record.acpx = acpx;
+      }
       return response;
     },
   });

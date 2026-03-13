@@ -85,6 +85,7 @@ export type SessionCreateResult = {
 
 export type SessionLoadResult = {
   agentSessionId?: string;
+  models?: SessionModelState;
 };
 
 type AgentDisconnectReason = "process_exit" | "process_close" | "pipe_close" | "connection_close";
@@ -1129,6 +1130,7 @@ export class AcpClient {
 
     return {
       agentSessionId: extractRuntimeSessionId(response?._meta),
+      models: response?.models ?? undefined,
     };
   }
 
@@ -1191,6 +1193,14 @@ export class AcpClient {
     value: string,
   ): Promise<SetSessionConfigOptionResponse> {
     const connection = this.getConnection();
+
+    // Route "model" through the dedicated session/set_model method.
+    // Droid supports session/set_model but NOT session/set_config_option.
+    if (configId === "model") {
+      await connection.unstable_setSessionModel({ sessionId, modelId: value });
+      return { configOptions: [] };
+    }
+
     return await connection.setSessionConfigOption({
       sessionId,
       configId,
