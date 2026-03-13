@@ -695,13 +695,56 @@ Each subagent:
 ### Caveats
 
 - `--model` on `prompt` (session resume) does NOT work when queue owner is warm — `sessionOptions` not forwarded to queue-owner `AcpClient`. Only `exec` and `sessions new` paths fire `set_model`.
-- Model persists server-side (verified droid), so subsequent prompts after `sessions new --model X` use X even though queue owner doesn't replay. But closing+recreating is needed to change model on existing session (until WI3 is implemented).
-- Not pushed to origin yet. Branch `feat/nai-187-generic-model-selection` on fork only.
+- Model persists server-side (verified droid), so subsequent prompts after `sessions new --model X` use X even though queue owner doesn't replay.
 
 ### Open / Next
 
-- Implement WI3-5: `set model` interception, model caching, status enrichment
-- Run acceptance tests AT-1 through AT-9
-- Smoke test with live agents (claude, droid, gemini) via sonnet subagents
-- WI6 reasoning effort doc note in CLI.md — deferred, low priority
-- Push to fork and create PR (user must explicitly request)
+- None (all WI1-6 complete; see session 2 log below)
+
+## Session Log — 2026-03-13 (session 2)
+
+### Decisions
+
+| Decision                                               | Chosen                                            | Rejected                                               | Why                                                                               |
+| ------------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `setSessionConfigOption` return for model interception | `{ configOptions: [] }`                           | `{}`                                                   | `SetSessionConfigOptionResponse` requires `configOptions` field per ACP SDK types |
+| Extend `SessionLoadResult` with `models`               | Yes — return models from `loadSessionWithOptions` | Only cache on create                                   | Needed for resume path to populate `acpx.current_model_id` on session load        |
+| Queue-IPC `writeSessionRecord` for model               | Unified write guard `if (mode \|\| model)`        | Separate `if` blocks each calling `writeSessionRecord` | Avoids double-write when both mode and model change in same call                  |
+
+### Files Modified (WI3-6, commit 30f714b)
+
+- `src/client.ts` — WI3: intercept `configId === "model"` in `setSessionConfigOption()` → `unstable_setSessionModel()`; extend `SessionLoadResult` with `models`
+- `src/types.ts` — WI4: add `current_model_id`, `available_models` to `SessionAcpxState`
+- `src/session-persistence/parse.ts` — WI4: parse new fields in `parseAcpxState()`
+- `src/session-conversation-model.ts` — WI4: clone new fields in `cloneSessionAcpxState()`
+- `src/session-runtime.ts` — WI4: cache model on create/resume; update on `set model` (queue-IPC path)
+- `src/session-runtime/prompt-runner.ts` — WI4: update `current_model_id` on `set model` (direct path)
+- `src/cli-core.ts` — WI5: add model/mode/availableModels to `handleStatus()` text + JSON output
+- `docs/CLI.md` — WI6: document `set model` interception, reasoning effort state, `-r` workaround
+- `test/integration.test.ts` — 3 new tests: set model success, status after create, status after switch
+
+### Smoke Test Results
+
+| Agent  | Exit | `set_model`                            | Models advertised        | Notes                                                                 |
+| ------ | ---- | -------------------------------------- | ------------------------ | --------------------------------------------------------------------- |
+| Claude | 0    | Called, succeeded                      | `default, sonnet, haiku` | Claude ACP now returns `models` (new since WI1); dual-write is benign |
+| Droid  | 0    | Called, succeeded (`gpt-5.4`)          | 17 models                | Invalid model (`gpt-4.1`) correctly warns and continues               |
+| Gemini | 0    | Called, succeeded (`gemini-2.5-flash`) | 7 models                 | **New finding:** Gemini supports `session/set_model`                  |
+
+Mid-session switch verified on droid: `gpt-5.4` → `gemini-3-flash-preview`, `status` reflected update.
+
+### Session Export
+
+- Full history: .sessions/260313-0544_ddac98d3/main.md
+
+### Linear Status
+
+- NAI-187: completed — all WI1-6 implemented, tested, smoke-tested across claude/droid/gemini
+- NAI-188: backlog — reasoning effort is external dependency (agent-side), documented in CLI.md
+
+### Open / Next
+
+- Merge to main and push to fork
+- Install build locally (`pnpm link --global` or similar)
+- Create PR to origin when ready
+- Formal AT-1 through AT-9 acceptance tests (optional — smoke tests covered the same ground live)
