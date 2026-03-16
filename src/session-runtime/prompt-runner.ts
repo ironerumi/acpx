@@ -1,6 +1,6 @@
 import { AcpClient } from "../client.js";
 import type { QueueOwnerActiveSessionController } from "../queue-owner-turn-controller.js";
-import { setDesiredModeId } from "../session-mode-preference.js";
+import { setCurrentModelId, setDesiredModeId } from "../session-mode-preference.js";
 import {
   absolutePath,
   isoNow,
@@ -205,6 +205,8 @@ export async function runSessionSetConfigOptionDirect(
       );
       if (options.configId === "mode") {
         setDesiredModeId(record, options.value);
+      } else if (options.configId === "model") {
+        setCurrentModelId(record, options.value);
       }
       return response;
     },

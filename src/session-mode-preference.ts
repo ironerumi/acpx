@@ -28,3 +28,9 @@ export function setDesiredModeId(record: SessionRecord, modeId: string | undefin
 
   record.acpx = acpx;
 }
+
+export function setCurrentModelId(record: SessionRecord, modelId: string): void {
+  const acpx = ensureAcpxState(record.acpx);
+  acpx.current_model_id = modelId;
+  record.acpx = acpx;
+}

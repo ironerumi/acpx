@@ -29,6 +29,7 @@ import {
   type WaitForTerminalExitResponse,
   type WriteTextFileRequest,
   type WriteTextFileResponse,
+  type SessionModelState,
 } from "@agentclientprotocol/sdk";
 import { extractAcpError } from "./acp-error-shapes.js";
 import { isSessionUpdateNotification } from "./acp-jsonrpc.js";
@@ -82,10 +83,14 @@ type LoadSessionOptions = {
 export type SessionCreateResult = {
   sessionId: string;
   agentSessionId?: string;
+  models?: SessionModelState;
+  modelSetSucceeded?: boolean;
 };
 
 export type SessionLoadResult = {
   agentSessionId?: string;
+  models?: SessionModelState;
+  modelSetSucceeded?: boolean;
 };
 
 type AgentDisconnectReason = "process_exit" | "process_close" | "pipe_close" | "connection_close";
@@ -689,7 +694,7 @@ function formatSessionControlAcpSummary(acp: {
 }
 
 function maybeWrapSessionControlError(
-  method: "session/set_mode" | "session/set_config_option",
+  method: "session/set_mode" | "session/set_config_option" | "session/set_model",
   error: unknown,
   context?: string,
 ): unknown {
@@ -1133,9 +1138,18 @@ export class AcpClient {
     }
 
     this.loadedSessionId = result.sessionId;
+
+    const requestedModel = this.options.sessionOptions?.model;
+    const modelSetSucceeded =
+      requestedModel && result.models
+        ? await this.trySetModel(result.sessionId, requestedModel, result.models)
+        : undefined;
+
     return {
       sessionId: result.sessionId,
       agentSessionId: extractRuntimeSessionId(result._meta),
+      models: result.models ?? undefined,
+      modelSetSucceeded,
     };
   }
 
@@ -1175,8 +1189,17 @@ export class AcpClient {
     }
 
     this.loadedSessionId = sessionId;
+
+    const requestedModel = this.options.sessionOptions?.model;
+    const modelSetSucceeded =
+      requestedModel && response?.models
+        ? await this.trySetModel(sessionId, requestedModel, response.models)
+        : undefined;
+
     return {
       agentSessionId: extractRuntimeSessionId(response?._meta),
+      models: response?.models ?? undefined,
+      modelSetSucceeded,
     };
   }
 
@@ -1243,6 +1266,17 @@ export class AcpClient {
     value: string,
   ): Promise<SetSessionConfigOptionResponse> {
     const connection = this.getConnection();
+    // Route "model" through the dedicated session/set_model method.
+    // Droid supports session/set_model but NOT session/set_config_option.
+    if (configId === "model") {
+      try {
+        await connection.unstable_setSessionModel({ sessionId, modelId: value });
+        return { configOptions: [] };
+      } catch (error) {
+        throw maybeWrapSessionControlError("session/set_model", error, `for model="${value}"`);
+      }
+    }
+
     try {
       return await connection.setSessionConfigOption({
         sessionId,
@@ -1255,6 +1289,35 @@ export class AcpClient {
         error,
         `for "${configId}"="${value}"`,
       );
+    }
+  }
+
+  async trySetModel(
+    sessionId: string,
+    modelId: string,
+    models: SessionModelState,
+  ): Promise<boolean> {
+    try {
+      this.log(
+        `available models: ${models.availableModels.map((m) => m.modelId).join(", ")} (current: ${models.currentModelId})`,
+      );
+      if (modelId === models.currentModelId) {
+        this.log(`model already set to ${modelId}`);
+        return true;
+      }
+      const connection = this.getConnection();
+      await connection.unstable_setSessionModel({ sessionId, modelId });
+      this.log(`model set to ${modelId}`);
+      return true;
+    } catch (err) {
+      const acp = extractAcpError(err);
+      const msg = acp
+        ? formatSessionControlAcpSummary(acp)
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      process.stderr.write(`[acpx] warning: failed to set model ${modelId}: ${msg}\n`);
+      return false;
     }
   }
 

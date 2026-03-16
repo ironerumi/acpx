@@ -135,12 +135,13 @@ Behavior:
 - Runs a single prompt in a temporary ACP session
 - Does not reuse or save persistent session state
 
-### Cancel / Mode / Config
+### Cancel / Mode / Config / Model
 
 ```bash
 acpx codex cancel
 acpx codex set-mode auto
 acpx codex set thought_level high
+acpx codex set model gpt-5.4
 ```
 
 Behavior:
@@ -150,6 +151,7 @@ Behavior:
 - `set-mode` mode ids are adapter-defined; unsupported values are rejected by the adapter (often `Invalid params`).
 - `set`: calls ACP `session/set_config_option`.
 - For codex, `thought_level` is accepted as a compatibility alias for codex-acp `reasoning_effort`.
+- `set model <id>`: intercepted to call `session/set_model` instead of `session/set_config_option`. This is the generic ACP method for mid-session model switching.
 - `set-mode`/`set` route through queue-owner IPC when active, otherwise reconnect directly.
 
 ### Sessions
@@ -194,6 +196,7 @@ Behavior:
 - `--format <fmt>`: output format (`text`, `json`, `quiet`)
 - `--timeout <seconds>`: max wait time (positive number)
 - `--ttl <seconds>`: queue owner idle TTL before shutdown (default `300`, `0` disables TTL)
+- `--model <id>`: set agent model via generic ACP `session/set_model` when the agent advertises models
 - `--verbose`: verbose ACP/debug logs to stderr
 
 Permission flags are mutually exclusive.
