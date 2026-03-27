@@ -15,9 +15,11 @@ import {
   type QueueOwnerCancelResultMessage,
   type QueueOwnerMessage,
   type QueueOwnerSetConfigOptionResultMessage,
+  type QueueOwnerSetModelResultMessage,
   type QueueOwnerSetModeResultMessage,
   type QueueRequest,
   type QueueSetConfigOptionRequest,
+  type QueueSetModelRequest,
   type QueueSetModeRequest,
   type QueueSubmitRequest,
 } from "./queue-messages.js";
@@ -528,6 +530,36 @@ async function submitSetModeToQueueOwner(
   return true;
 }
 
+async function submitSetModelToQueueOwner(
+  owner: QueueOwnerRecord,
+  modelId: string,
+  timeoutMs?: number,
+): Promise<boolean | undefined> {
+  const request: QueueSetModelRequest = {
+    type: "set_model",
+    requestId: randomUUID(),
+    ownerGeneration: owner.ownerGeneration,
+    modelId,
+    timeoutMs,
+  };
+  const response = await submitControlToQueueOwner(
+    owner,
+    request,
+    (message): message is QueueOwnerSetModelResultMessage => message.type === "set_model_result",
+  );
+  if (!response) {
+    return undefined;
+  }
+  if (response.requestId !== request.requestId) {
+    throw new QueueProtocolError("Queue owner returned mismatched set_model response", {
+      detailCode: "QUEUE_PROTOCOL_MALFORMED_MESSAGE",
+      origin: "queue",
+      retryable: true,
+    });
+  }
+  return true;
+}
+
 async function submitSetConfigOptionToQueueOwner(
   owner: QueueOwnerRecord,
   configId: string,
@@ -670,6 +702,42 @@ export async function trySetModeOnRunningOwner(
 
   throw new QueueConnectionError(
     "Session queue owner is running but not accepting set_mode requests",
+    {
+      detailCode: "QUEUE_NOT_ACCEPTING_REQUESTS",
+      origin: "queue",
+      retryable: true,
+    },
+  );
+}
+
+export async function trySetModelOnRunningOwner(
+  sessionId: string,
+  modelId: string,
+  timeoutMs: number | undefined,
+  verbose: boolean | undefined,
+): Promise<boolean | undefined> {
+  const owner = await readQueueOwnerRecord(sessionId);
+  if (!owner) {
+    return undefined;
+  }
+
+  const submitted = await submitSetModelToQueueOwner(owner, modelId, timeoutMs);
+  if (submitted) {
+    if (verbose) {
+      process.stderr.write(
+        `[acpx] requested session/set_model on owner pid ${owner.pid} for session ${sessionId}\n`,
+      );
+    }
+    return true;
+  }
+
+  const health = await probeQueueOwnerHealth(sessionId);
+  if (!health.hasLease) {
+    return undefined;
+  }
+
+  throw new QueueConnectionError(
+    "Session queue owner is running but not accepting set_model requests",
     {
       detailCode: "QUEUE_NOT_ACCEPTING_REQUESTS",
       origin: "queue",

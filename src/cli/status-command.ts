@@ -66,6 +66,8 @@ export async function handleStatus(
     process.stdout.write(`agent: ${agent.agentCommand}\n`);
     process.stdout.write("pid: -\n");
     process.stdout.write("status: no-session\n");
+    process.stdout.write("model: -\n");
+    process.stdout.write("mode: -\n");
     process.stdout.write("uptime: -\n");
     process.stdout.write("lastPromptTime: -\n");
     return;
@@ -78,6 +80,9 @@ export async function handleStatus(
     agentCommand: record.agentCommand,
     pid: health.pid ?? record.pid ?? null,
     status: running ? "running" : "dead",
+    model: record.acpx?.current_model_id ?? null,
+    mode: record.acpx?.current_mode_id ?? null,
+    availableModels: record.acpx?.available_models ?? null,
     uptime: running ? (formatUptime(record.agentStartedAt) ?? null) : null,
     lastPromptTime: record.lastPromptAt ?? null,
     exitCode: running ? null : (record.lastAgentExitCode ?? null),
@@ -91,6 +96,9 @@ export async function handleStatus(
       status: running ? "alive" : "dead",
       pid: payload.pid ?? undefined,
       summary: running ? "queue owner healthy" : "queue owner unavailable",
+      model: payload.model ?? undefined,
+      mode: payload.mode ?? undefined,
+      availableModels: payload.availableModels ?? undefined,
       uptime: payload.uptime ?? undefined,
       lastPromptTime: payload.lastPromptTime ?? undefined,
       exitCode: payload.exitCode ?? undefined,
@@ -115,6 +123,8 @@ export async function handleStatus(
   process.stdout.write(`agent: ${payload.agentCommand}\n`);
   process.stdout.write(`pid: ${payload.pid ?? "-"}\n`);
   process.stdout.write(`status: ${payload.status}\n`);
+  process.stdout.write(`model: ${payload.model ?? "-"}\n`);
+  process.stdout.write(`mode: ${payload.mode ?? "-"}\n`);
   process.stdout.write(`uptime: ${payload.uptime ?? "-"}\n`);
   process.stdout.write(`lastPromptTime: ${payload.lastPromptTime ?? "-"}\n`);
   if (payload.status === "dead") {

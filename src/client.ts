@@ -27,10 +27,10 @@ import {
   type WaitForTerminalExitResponse,
   type WriteTextFileRequest,
   type WriteTextFileResponse,
+  type SessionModelState,
 } from "@agentclientprotocol/sdk";
 import { extractAcpError } from "./acp-error-shapes.js";
 import { isSessionUpdateNotification } from "./acp-jsonrpc.js";
-import { isCodexAcpCommand } from "./codex-compat.js";
 import {
   AgentDisconnectedError,
   AgentSpawnError,
@@ -86,10 +86,12 @@ type LoadSessionOptions = {
 export type SessionCreateResult = {
   sessionId: string;
   agentSessionId?: string;
+  models?: SessionModelState;
 };
 
 export type SessionLoadResult = {
   agentSessionId?: string;
+  models?: SessionModelState;
 };
 
 type AgentDisconnectReason = "process_exit" | "process_close" | "pipe_close" | "connection_close";
@@ -762,7 +764,7 @@ function formatSessionControlAcpSummary(acp: {
 }
 
 function maybeWrapSessionControlError(
-  method: "session/set_mode" | "session/set_config_option",
+  method: "session/set_mode" | "session/set_config_option" | "session/set_model",
   error: unknown,
   context?: string,
 ): unknown {
@@ -1190,7 +1192,6 @@ export class AcpClient {
     const connection = this.getConnection();
     const { command, args } = splitCommandLine(this.options.agentCommand);
     const claudeAcp = isClaudeAcpCommand(command, args);
-    const codexAcp = isCodexAcpCommand(command, args);
 
     let result: Awaited<ReturnType<typeof connection.newSession>>;
     try {
@@ -1215,21 +1216,11 @@ export class AcpClient {
     }
 
     this.loadedSessionId = result.sessionId;
-    if (
-      codexAcp &&
-      typeof this.options.sessionOptions?.model === "string" &&
-      this.options.sessionOptions.model.trim().length > 0
-    ) {
-      await this.setSessionConfigOption(
-        result.sessionId,
-        "model",
-        this.options.sessionOptions.model,
-      );
-    }
 
     return {
       sessionId: result.sessionId,
       agentSessionId: extractRuntimeSessionId(result._meta),
+      models: result.models ?? undefined,
     };
   }
 
@@ -1271,8 +1262,10 @@ export class AcpClient {
     }
 
     this.loadedSessionId = sessionId;
+
     return {
       agentSessionId: extractRuntimeSessionId(response?._meta),
+      models: response?.models ?? undefined,
     };
   }
 
@@ -1357,6 +1350,41 @@ export class AcpClient {
         error,
         `for "${configId}"="${value}"`,
       );
+    }
+  }
+
+  async setSessionModel(sessionId: string, modelId: string): Promise<void> {
+    const connection = this.getConnection();
+    try {
+      await this.runConnectionRequest(() =>
+        connection.unstable_setSessionModel({
+          sessionId,
+          modelId,
+        }),
+      );
+    } catch (error) {
+      const wrapped = maybeWrapSessionControlError(
+        "session/set_model",
+        error,
+        `for model "${modelId}"`,
+      );
+      if (wrapped !== error) {
+        throw wrapped;
+      }
+      const acp = extractAcpError(error);
+      const summary = acp
+        ? formatSessionControlAcpSummary(acp)
+        : error instanceof Error
+          ? error.message
+          : String(error);
+      if (error instanceof Error) {
+        throw new Error(`Failed session/set_model for model "${modelId}": ${summary}`, {
+          cause: error,
+        });
+      }
+      throw new Error(`Failed session/set_model for model "${modelId}": ${summary}`, {
+        cause: error,
+      });
     }
   }
 

@@ -92,6 +92,7 @@ export type QueueTask = {
 export type QueueOwnerControlHandlers = {
   cancelPrompt: () => Promise<boolean>;
   setSessionMode: (modeId: string, timeoutMs?: number) => Promise<void>;
+  setSessionModel: (modelId: string, timeoutMs?: number) => Promise<void>;
   setSessionConfigOption: (
     configId: string,
     value: string,
@@ -402,6 +403,22 @@ export class SessionQueueOwner {
               type: "set_mode_result",
               requestId: request.requestId,
               modeId: request.modeId,
+            };
+          },
+        });
+        return;
+      }
+
+      if (request.type === "set_model") {
+        this.handleControlRequest({
+          socket,
+          requestId: request.requestId,
+          run: async () => {
+            await this.controlHandlers.setSessionModel(request.modelId, request.timeoutMs);
+            return {
+              type: "set_model_result",
+              requestId: request.requestId,
+              modelId: request.modelId,
             };
           },
         });

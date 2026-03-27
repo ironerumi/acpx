@@ -34,6 +34,7 @@ import {
   tryAcquireQueueOwnerLease,
   tryCancelOnRunningOwner,
   trySetConfigOptionOnRunningOwner,
+  trySetModelOnRunningOwner,
   trySetModeOnRunningOwner,
   trySubmitToRunningOwner,
   waitMs,
@@ -43,11 +44,17 @@ import {
   type QueueOwnerActiveSessionController,
 } from "./queue-owner-turn-controller.js";
 import { normalizeRuntimeSessionId } from "./runtime-session-id.js";
-import { setDesiredModeId } from "./session-mode-preference.js";
+import {
+  setCurrentModelId,
+  setDesiredModeId,
+  setDesiredModelId,
+  syncAdvertisedModelState,
+} from "./session-mode-preference.js";
 import { connectAndLoadSession } from "./session-runtime/connect-load.js";
 import { applyConversation, applyLifecycleSnapshotToRecord } from "./session-runtime/lifecycle.js";
 import {
   runSessionSetConfigOptionDirect,
+  runSessionSetModelDirect,
   runSessionSetModeDirect,
 } from "./session-runtime/prompt-runner.js";
 import {
@@ -90,6 +97,7 @@ import {
   type SessionEnsureResult,
   type SessionRecord,
   type SessionSetConfigOptionResult,
+  type SessionSetModelResult,
   type SessionSetModeResult,
   type SessionSendOutcome,
   type SessionSendResult,
@@ -257,6 +265,16 @@ export type SessionSetModeOptions = {
   verbose?: boolean;
 } & TimedRunOptions;
 
+export type SessionSetModelOptions = {
+  sessionId: string;
+  modelId: string;
+  mcpServers?: McpServer[];
+  nonInteractivePermissions?: NonInteractivePermissionPolicy;
+  authCredentials?: Record<string, string>;
+  authPolicy?: AuthPolicy;
+  verbose?: boolean;
+} & TimedRunOptions;
+
 export type SessionSetConfigOptionOptions = {
   sessionId: string;
   configId: string;
@@ -278,6 +296,29 @@ function toPromptResult(
     sessionId,
     permissionStats: client.getPermissionStats(),
   };
+}
+
+async function applyRequestedModelIfAdvertised(params: {
+  client: AcpClient;
+  sessionId: string;
+  requestedModel: string | undefined;
+  models: import("./client.js").SessionCreateResult["models"];
+  timeoutMs?: number;
+}): Promise<boolean> {
+  const requestedModel =
+    typeof params.requestedModel === "string" ? params.requestedModel.trim() : "";
+  if (!requestedModel || !params.models) {
+    return false;
+  }
+  if (params.models.currentModelId === requestedModel) {
+    return true;
+  }
+
+  await withTimeout(
+    params.client.setSessionModel(params.sessionId, requestedModel),
+    params.timeoutMs,
+  );
+  return true;
 }
 
 type RunSessionPromptOptions = {
@@ -670,6 +711,9 @@ async function runSessionPrompt(options: RunSessionPromptOptions): Promise<Sessi
     setSessionMode: async (modeId: string) => {
       await client.setSessionMode(activeSessionIdForControl, modeId);
     },
+    setSessionModel: async (modelId: string) => {
+      await client.setSessionModel(activeSessionIdForControl, modelId);
+    },
     setSessionConfigOption: async (configId: string, value: string) => {
       return await client.setSessionConfigOption(activeSessionIdForControl, configId, value);
     },
@@ -927,6 +971,13 @@ export async function runOnce(options: RunOnceOptions): Promise<RunPromptResult>
           );
         });
         const sessionId = createdSession.sessionId;
+        await applyRequestedModelIfAdvertised({
+          client,
+          sessionId,
+          requestedModel: options.sessionOptions?.model,
+          models: createdSession.models,
+          timeoutMs: options.timeoutMs,
+        });
 
         output.setContext({
           sessionId,
@@ -988,6 +1039,8 @@ async function createSessionRecordWithClient(
   });
   let sessionId: string;
   let agentSessionId: string | undefined;
+  let sessionModels: import("./client.js").SessionCreateResult["models"];
+  let requestedModelApplied = false;
 
   if (options.resumeSessionId) {
     if (!client.supportsLoadSession()) {
@@ -1003,6 +1056,14 @@ async function createSessionRecordWithClient(
       );
       sessionId = options.resumeSessionId;
       agentSessionId = normalizeRuntimeSessionId(loadedSession.agentSessionId);
+      sessionModels = loadedSession.models;
+      requestedModelApplied = await applyRequestedModelIfAdvertised({
+        client,
+        sessionId,
+        requestedModel: options.sessionOptions?.model,
+        models: loadedSession.models,
+        timeoutMs: options.timeoutMs,
+      });
     } catch (error) {
       throw new Error(
         `Failed to resume ACP session ${options.resumeSessionId}: ${formatErrorMessage(error)}`,
@@ -1017,6 +1078,14 @@ async function createSessionRecordWithClient(
     });
     sessionId = createdSession.sessionId;
     agentSessionId = normalizeRuntimeSessionId(createdSession.agentSessionId);
+    sessionModels = createdSession.models;
+    requestedModelApplied = await applyRequestedModelIfAdvertised({
+      client,
+      sessionId,
+      requestedModel: options.sessionOptions?.model,
+      models: createdSession.models,
+      timeoutMs: options.timeoutMs,
+    });
   }
   const lifecycle = client.getAgentLifecycleSnapshot();
 
@@ -1045,6 +1114,10 @@ async function createSessionRecordWithClient(
   };
 
   persistSessionOptions(record, options.sessionOptions);
+  syncAdvertisedModelState(record, sessionModels);
+  if (requestedModelApplied) {
+    setCurrentModelId(record, options.sessionOptions?.model);
+  }
 
   await writeSessionRecord(record);
   return record;
@@ -1105,6 +1178,20 @@ export async function ensureSession(options: SessionEnsureOptions): Promise<Sess
     boundary: walkBoundary,
   });
   if (existing) {
+    const requestedModel = options.sessionOptions?.model;
+    if (requestedModel) {
+      const result = await setSessionModel({
+        sessionId: existing.acpxRecordId,
+        modelId: requestedModel,
+        mcpServers: options.mcpServers,
+        nonInteractivePermissions: options.nonInteractivePermissions,
+        authCredentials: options.authCredentials,
+        authPolicy: options.authPolicy,
+        timeoutMs: options.timeoutMs,
+        verbose: options.verbose,
+      });
+      return { record: result.record, created: false };
+    }
     return {
       record: existing,
       created: false,
@@ -1191,6 +1278,18 @@ export async function runSessionQueueOwner(options: QueueOwnerRuntimeOptions): P
         verbose: options.verbose,
       });
     },
+    setSessionModelFallback: async (modelId: string, timeoutMs?: number) => {
+      await runSessionSetModelDirect({
+        sessionRecordId: options.sessionId,
+        modelId,
+        mcpServers: options.mcpServers,
+        nonInteractivePermissions: options.nonInteractivePermissions,
+        authCredentials: options.authCredentials,
+        authPolicy: options.authPolicy,
+        timeoutMs,
+        verbose: options.verbose,
+      });
+    },
     setSessionConfigOptionFallback: async (configId: string, value: string, timeoutMs?: number) => {
       const result = await runSessionSetConfigOptionDirect({
         sessionRecordId: options.sessionId,
@@ -1253,6 +1352,9 @@ export async function runSessionQueueOwner(options: QueueOwnerRuntimeOptions): P
         },
         setSessionMode: async (modeId: string, timeoutMs?: number) => {
           await turnController.setSessionMode(modeId, timeoutMs);
+        },
+        setSessionModel: async (modelId: string, timeoutMs?: number) => {
+          await turnController.setSessionModel(modelId, timeoutMs);
         },
         setSessionConfigOption: async (configId: string, value: string, timeoutMs?: number) => {
           return await turnController.setSessionConfigOption(configId, value, timeoutMs);
@@ -1415,6 +1517,38 @@ export async function setSessionMode(
   return await runSessionSetModeDirect({
     sessionRecordId: options.sessionId,
     modeId: options.modeId,
+    mcpServers: options.mcpServers,
+    nonInteractivePermissions: options.nonInteractivePermissions,
+    authCredentials: options.authCredentials,
+    authPolicy: options.authPolicy,
+    timeoutMs: options.timeoutMs,
+    verbose: options.verbose,
+  });
+}
+
+export async function setSessionModel(
+  options: SessionSetModelOptions,
+): Promise<SessionSetModelResult> {
+  const submittedToOwner = await trySetModelOnRunningOwner(
+    options.sessionId,
+    options.modelId,
+    options.timeoutMs,
+    options.verbose,
+  );
+  if (submittedToOwner) {
+    const record = await resolveSessionRecord(options.sessionId);
+    setDesiredModelId(record, options.modelId);
+    setCurrentModelId(record, options.modelId);
+    await writeSessionRecord(record);
+    return {
+      record,
+      resumed: false,
+    };
+  }
+
+  return await runSessionSetModelDirect({
+    sessionRecordId: options.sessionId,
+    modelId: options.modelId,
     mcpServers: options.mcpServers,
     nonInteractivePermissions: options.nonInteractivePermissions,
     authCredentials: options.authCredentials,

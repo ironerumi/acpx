@@ -26,6 +26,9 @@ test("SessionQueueOwner handles control requests and nextTask timeouts", async (
       setSessionMode: async (modeId) => {
         modes.push(modeId);
       },
+      setSessionModel: async () => {
+        // no-op
+      },
       setSessionConfigOption: async (configId, value) => {
         configRequests.push({ id: configId, value });
         return {
@@ -123,6 +126,9 @@ test("SessionQueueOwner enqueues fire-and-forget prompts and rejects invalid own
       {
         cancelPrompt: async () => false,
         setSessionMode: async () => {
+          // no-op
+        },
+        setSessionModel: async () => {
           // no-op
         },
         setSessionConfigOption: async () =>

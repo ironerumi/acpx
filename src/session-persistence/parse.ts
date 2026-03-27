@@ -283,6 +283,14 @@ function parseAcpxState(raw: unknown): SessionAcpxState | undefined {
     state.desired_mode_id = record.desired_mode_id;
   }
 
+  if (typeof record.current_model_id === "string") {
+    state.current_model_id = record.current_model_id;
+  }
+
+  if (isStringArray(record.available_models)) {
+    state.available_models = [...record.available_models];
+  }
+
   if (isStringArray(record.available_commands)) {
     state.available_commands = [...record.available_commands];
   }

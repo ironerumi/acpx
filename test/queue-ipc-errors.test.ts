@@ -516,6 +516,9 @@ test("SessionQueueOwner emits typed invalid request payload errors", async () =>
       setSessionMode: async () => {
         // no-op
       },
+      setSessionModel: async () => {
+        // no-op
+      },
       setSessionConfigOption: async () =>
         ({
           configOptions: [],
@@ -558,6 +561,9 @@ test("SessionQueueOwner emits typed shutdown errors for pending prompts", async 
     const owner = await SessionQueueOwner.start(lease, {
       cancelPrompt: async () => false,
       setSessionMode: async () => {
+        // no-op
+      },
+      setSessionModel: async () => {
         // no-op
       },
       setSessionConfigOption: async () =>
@@ -623,6 +629,9 @@ test("SessionQueueOwner rejects prompts when queue depth exceeds the configured 
       {
         cancelPrompt: async () => false,
         setSessionMode: async () => {
+          // no-op
+        },
+        setSessionModel: async () => {
           // no-op
         },
         setSessionConfigOption: async () =>

@@ -283,6 +283,8 @@ export type SessionConversation = {
 export type SessionAcpxState = {
   current_mode_id?: string;
   desired_mode_id?: string;
+  current_model_id?: string;
+  available_models?: string[];
   available_commands?: string[];
   config_options?: SessionConfigOption[];
   session_options?: {
@@ -345,6 +347,12 @@ export type SessionSetModeResult = {
 export type SessionSetConfigOptionResult = {
   record: SessionRecord;
   response: SetSessionConfigOptionResponse;
+  resumed: boolean;
+  loadError?: string;
+};
+
+export type SessionSetModelResult = {
+  record: SessionRecord;
   resumed: boolean;
   loadError?: string;
 };

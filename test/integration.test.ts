@@ -801,6 +801,305 @@ test("integration: exec forwards model, allowed-tools, and max-turns in session/
   });
 });
 
+test("integration: exec --model calls session/set_model when agent advertises models", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const modelAgentCommand = `${MOCK_AGENT_COMMAND} --advertise-models`;
+
+    try {
+      const result = await runCli(
+        [
+          "--agent",
+          modelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "--format",
+          "json",
+          "--model",
+          "fast-model",
+          "exec",
+          "echo hello",
+        ],
+        homeDir,
+      );
+      assert.equal(result.code, 0, result.stderr);
+
+      const payloads = parseJsonRpcOutputLines(result.stdout);
+      const setModelRequest = payloads.find((payload) => payload.method === "session/set_model") as
+        | { params?: { modelId?: string } }
+        | undefined;
+      assert(setModelRequest, "expected session/set_model request in JSON-RPC output");
+      assert.equal(setModelRequest.params?.modelId, "fast-model");
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: exec --model skips session/set_model when agent does not advertise models", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+
+    try {
+      const result = await runCli(
+        [...baseAgentArgs(cwd), "--format", "json", "--model", "sonnet", "exec", "echo hello"],
+        homeDir,
+      );
+      assert.equal(result.code, 0, result.stderr);
+
+      const payloads = parseJsonRpcOutputLines(result.stdout);
+
+      // _meta.claudeCode.options.model should still be sent
+      const createRequest = payloads.find((payload) => payload.method === "session/new") as
+        | { params?: { _meta?: Record<string, unknown> } }
+        | undefined;
+      assert(createRequest, "expected session/new request");
+      assert.deepEqual((createRequest.params?._meta as Record<string, unknown>)?.claudeCode, {
+        options: { model: "sonnet" },
+      });
+
+      // session/set_model should NOT be called
+      const setModelRequest = payloads.find((payload) => payload.method === "session/set_model");
+      assert.equal(setModelRequest, undefined, "session/set_model should not be called");
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: exec --model fails when session/set_model fails", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const failModelAgentCommand = `${MOCK_AGENT_COMMAND} --set-session-model-fails`;
+
+    try {
+      const result = await runCli(
+        [
+          "--agent",
+          failModelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "--format",
+          "quiet",
+          "--model",
+          "bad-model",
+          "exec",
+          "echo hello",
+        ],
+        homeDir,
+      );
+      assert.notEqual(result.code, 0, "expected non-zero exit");
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /setSessionModel failed|session\/set_model/i);
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: sessions new --model fails when session/set_model fails", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const failModelAgentCommand = `${MOCK_AGENT_COMMAND} --set-session-model-fails`;
+
+    try {
+      const result = await runCli(
+        [
+          "--agent",
+          failModelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "--model",
+          "bad-model",
+          "sessions",
+          "new",
+        ],
+        homeDir,
+      );
+      assert.notEqual(result.code, 0, "expected non-zero exit");
+      assert.match(result.stderr, /setSessionModel failed|session\/set_model/i);
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: set model routes through session/set_model and succeeds", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const modelAgentCommand = `${MOCK_AGENT_COMMAND} --advertise-models`;
+
+    try {
+      // Create session
+      const created = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "sessions", "new"],
+        homeDir,
+      );
+      assert.equal(created.code, 0, created.stderr);
+
+      // Switch model mid-session via set command (uses session/set_model internally)
+      const setResult = await runCli(
+        [
+          "--agent",
+          modelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "--format",
+          "json",
+          "set",
+          "model",
+          "gpt-5.4",
+        ],
+        homeDir,
+      );
+      assert.equal(setResult.code, 0, setResult.stderr);
+      const payload = JSON.parse(setResult.stdout.trim()) as {
+        action?: string;
+        modelId?: string;
+      };
+      assert.equal(payload.action, "model_set");
+      assert.equal(payload.modelId, "gpt-5.4");
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: set model rejects with clear error on ACP invalid params", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const invalidModelAgentCommand = `${MOCK_AGENT_COMMAND} --set-session-model-invalid-params`;
+
+    try {
+      // Create session
+      const created = await runCli(
+        ["--agent", invalidModelAgentCommand, "--approve-all", "--cwd", cwd, "sessions", "new"],
+        homeDir,
+      );
+      assert.equal(created.code, 0, created.stderr);
+
+      // Attempt model switch — should fail with enriched error
+      const setResult = await runCli(
+        [
+          "--agent",
+          invalidModelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "set",
+          "model",
+          "bad-model",
+        ],
+        homeDir,
+      );
+      assert.notEqual(setResult.code, 0, "expected non-zero exit");
+      assert.match(setResult.stderr, /rejected session\/set_model/i);
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: status shows model after session creation with --model", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const modelAgentCommand = `${MOCK_AGENT_COMMAND} --advertise-models`;
+
+    try {
+      // Create session with --model
+      const created = await runCli(
+        [
+          "--agent",
+          modelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "--model",
+          "gpt-5.4",
+          "sessions",
+          "new",
+        ],
+        homeDir,
+      );
+      assert.equal(created.code, 0, created.stderr);
+
+      // Check status JSON
+      const status = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "--format", "json", "status"],
+        homeDir,
+      );
+      assert.equal(status.code, 0, status.stderr);
+
+      const statusPayload = JSON.parse(status.stdout.trim()) as {
+        model?: string;
+        mode?: string;
+        availableModels?: string[];
+      };
+      assert.equal(statusPayload.model, "gpt-5.4");
+      assert(Array.isArray(statusPayload.availableModels), "expected availableModels array");
+
+      // Check status text
+      const statusText = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "status"],
+        homeDir,
+      );
+      assert.equal(statusText.code, 0, statusText.stderr);
+      assert.match(statusText.stdout, /model: gpt-5\.4/);
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+test("integration: status shows updated model after set model", async () => {
+  await withTempHome(async (homeDir) => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));
+    const modelAgentCommand = `${MOCK_AGENT_COMMAND} --advertise-models`;
+
+    try {
+      // Create session with --model
+      const created = await runCli(
+        [
+          "--agent",
+          modelAgentCommand,
+          "--approve-all",
+          "--cwd",
+          cwd,
+          "--model",
+          "fast-model",
+          "sessions",
+          "new",
+        ],
+        homeDir,
+      );
+      assert.equal(created.code, 0, created.stderr);
+
+      // Switch model
+      const setResult = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "set", "model", "gpt-5.4"],
+        homeDir,
+      );
+      assert.equal(setResult.code, 0, setResult.stderr);
+
+      // Check status JSON — should show updated model
+      const status = await runCli(
+        ["--agent", modelAgentCommand, "--approve-all", "--cwd", cwd, "--format", "json", "status"],
+        homeDir,
+      );
+      assert.equal(status.code, 0, status.stderr);
+
+      const statusPayload = JSON.parse(status.stdout.trim()) as { model?: string };
+      assert.equal(statusPayload.model, "gpt-5.4");
+    } finally {
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
 test("integration: perf metrics capture writes ndjson records for CLI runs", async () => {
   await withTempHome(async (homeDir) => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-integration-cwd-"));

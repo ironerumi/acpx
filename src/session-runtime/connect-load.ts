@@ -5,11 +5,20 @@ import {
   isAcpQueryClosedBeforeResponseError,
   isAcpResourceNotFoundError,
 } from "../error-normalization.js";
-import { SessionModeReplayError, SessionResumeRequiredError } from "../errors.js";
+import {
+  SessionModeReplayError,
+  SessionModelReplayError,
+  SessionResumeRequiredError,
+} from "../errors.js";
 import { incrementPerfCounter } from "../perf-metrics.js";
 import { isProcessAlive } from "../queue-ipc.js";
 import type { QueueOwnerActiveSessionController } from "../queue-owner-turn-controller.js";
-import { getDesiredModeId } from "../session-mode-preference.js";
+import {
+  getDesiredModeId,
+  getDesiredModelId,
+  setCurrentModelId,
+  syncAdvertisedModelState,
+} from "../session-mode-preference.js";
 import { InterruptedError, TimeoutError, withTimeout } from "../session-runtime-helpers.js";
 import type { SessionRecord, SessionResumePolicy } from "../types.js";
 import {
@@ -96,6 +105,7 @@ export async function connectAndLoadSession(
   const originalSessionId = record.acpSessionId;
   const originalAgentSessionId = record.agentSessionId;
   const desiredModeId = getDesiredModeId(record.acpx);
+  const desiredModelId = getDesiredModelId(record.acpx);
   const storedProcessAlive = isProcessAlive(record.pid);
   const shouldReconnect = Boolean(record.pid) && !storedProcessAlive;
 
@@ -128,6 +138,7 @@ export async function connectAndLoadSession(
   let sessionId = record.acpSessionId;
   let createdFreshSession = false;
   let pendingAgentSessionId = record.agentSessionId;
+  let sessionModels: import("../client.js").SessionLoadResult["models"];
 
   if (reusingLoadedSession) {
     resumed = true;
@@ -140,6 +151,7 @@ export async function connectAndLoadSession(
         options.timeoutMs,
       );
       reconcileAgentSessionId(record, loadResult.agentSessionId);
+      sessionModels = loadResult.models;
       resumed = true;
     } catch (error) {
       loadError = formatErrorMessage(error);
@@ -157,6 +169,7 @@ export async function connectAndLoadSession(
       sessionId = createdSession.sessionId;
       createdFreshSession = true;
       pendingAgentSessionId = createdSession.agentSessionId;
+      sessionModels = createdSession.models;
     }
   } else {
     if (sameSessionOnly) {
@@ -169,6 +182,7 @@ export async function connectAndLoadSession(
     sessionId = createdSession.sessionId;
     createdFreshSession = true;
     pendingAgentSessionId = createdSession.agentSessionId;
+    sessionModels = createdSession.models;
   }
 
   if (createdFreshSession && desiredModeId) {
@@ -195,9 +209,44 @@ export async function connectAndLoadSession(
     }
   }
 
+  if (
+    createdFreshSession &&
+    desiredModelId &&
+    sessionModels &&
+    desiredModelId !== sessionModels.currentModelId
+  ) {
+    try {
+      await withTimeout(client.setSessionModel(sessionId, desiredModelId), options.timeoutMs);
+      setCurrentModelId(record, desiredModelId);
+      if (options.verbose) {
+        process.stderr.write(
+          `[acpx] replayed desired model ${desiredModelId} on fresh ACP session ${sessionId} (previous ${originalSessionId})\n`,
+        );
+      }
+    } catch (error) {
+      const message =
+        `Failed to replay saved session model ${desiredModelId} on fresh ACP session ${sessionId}: ` +
+        formatErrorMessage(error);
+      record.acpSessionId = originalSessionId;
+      record.agentSessionId = originalAgentSessionId;
+      if (options.verbose) {
+        process.stderr.write(`[acpx] ${message}\n`);
+      }
+      throw new SessionModelReplayError(message, {
+        cause: error instanceof Error ? error : undefined,
+        retryable: true,
+      });
+    }
+  }
+
   if (createdFreshSession) {
     record.acpSessionId = sessionId;
     reconcileAgentSessionId(record, pendingAgentSessionId);
+  }
+
+  syncAdvertisedModelState(record, sessionModels);
+  if (createdFreshSession && desiredModelId && sessionModels) {
+    setCurrentModelId(record, desiredModelId);
   }
 
   options.onSessionIdResolved?.(sessionId);

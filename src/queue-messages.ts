@@ -45,6 +45,14 @@ export type QueueSetModeRequest = {
   timeoutMs?: number;
 };
 
+export type QueueSetModelRequest = {
+  type: "set_model";
+  requestId: string;
+  ownerGeneration?: number;
+  modelId: string;
+  timeoutMs?: number;
+};
+
 export type QueueSetConfigOptionRequest = {
   type: "set_config_option";
   requestId: string;
@@ -58,6 +66,7 @@ export type QueueRequest =
   | QueueSubmitRequest
   | QueueCancelRequest
   | QueueSetModeRequest
+  | QueueSetModelRequest
   | QueueSetConfigOptionRequest;
 
 export type QueueOwnerAcceptedMessage = {
@@ -94,6 +103,13 @@ export type QueueOwnerSetModeResultMessage = {
   modeId: string;
 };
 
+export type QueueOwnerSetModelResultMessage = {
+  type: "set_model_result";
+  requestId: string;
+  ownerGeneration?: number;
+  modelId: string;
+};
+
 export type QueueOwnerSetConfigOptionResultMessage = {
   type: "set_config_option_result";
   requestId: string;
@@ -120,6 +136,7 @@ export type QueueOwnerMessage =
   | QueueOwnerResultMessage
   | QueueOwnerCancelResultMessage
   | QueueOwnerSetModeResultMessage
+  | QueueOwnerSetModelResultMessage
   | QueueOwnerSetConfigOptionResultMessage
   | QueueOwnerErrorMessage;
 
@@ -269,6 +286,19 @@ export function parseQueueRequest(raw: unknown): QueueRequest | null {
     };
   }
 
+  if (request.type === "set_model") {
+    if (typeof request.modelId !== "string" || request.modelId.trim().length === 0) {
+      return null;
+    }
+    return {
+      type: "set_model",
+      requestId: request.requestId,
+      ownerGeneration,
+      modelId: request.modelId,
+      timeoutMs,
+    };
+  }
+
   if (request.type === "set_config_option") {
     if (
       typeof request.configId !== "string" ||
@@ -409,6 +439,18 @@ export function parseQueueOwnerMessage(raw: unknown): QueueOwnerMessage | null {
       requestId: message.requestId,
       ownerGeneration,
       modeId: message.modeId,
+    };
+  }
+
+  if (message.type === "set_model_result") {
+    if (typeof message.modelId !== "string") {
+      return null;
+    }
+    return {
+      type: "set_model_result",
+      requestId: message.requestId,
+      ownerGeneration,
+      modelId: message.modelId,
     };
   }
 

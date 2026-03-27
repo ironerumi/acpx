@@ -1,6 +1,10 @@
 import { AcpClient } from "../client.js";
 import type { QueueOwnerActiveSessionController } from "../queue-owner-turn-controller.js";
-import { setDesiredModeId } from "../session-mode-preference.js";
+import {
+  setCurrentModelId,
+  setDesiredModeId,
+  setDesiredModelId,
+} from "../session-mode-preference.js";
 import {
   absolutePath,
   isoNow,
@@ -15,6 +19,7 @@ import type {
   PermissionMode,
   SessionRecord,
   SessionSetConfigOptionResult,
+  SessionSetModelResult,
   SessionSetModeResult,
 } from "../types.js";
 import { connectAndLoadSession } from "./connect-load.js";
@@ -96,6 +101,9 @@ async function withConnectedSession<T>(
     requestCancelActivePrompt: async () => await client.requestCancelActivePrompt(),
     setSessionMode: async (modeId: string) => {
       await client.setSessionMode(activeSessionIdForControl, modeId);
+    },
+    setSessionModel: async (modelId: string) => {
+      await client.setSessionModel(activeSessionIdForControl, modelId);
     },
     setSessionConfigOption: async (configId: string, value: string) => {
       return await client.setSessionConfigOption(activeSessionIdForControl, configId, value);
@@ -191,6 +199,19 @@ export type RunSessionSetConfigOptionDirectOptions = {
   onClientClosed?: () => void;
 };
 
+export type RunSessionSetModelDirectOptions = {
+  sessionRecordId: string;
+  modelId: string;
+  mcpServers?: McpServer[];
+  nonInteractivePermissions?: NonInteractivePermissionPolicy;
+  authCredentials?: Record<string, string>;
+  authPolicy?: AuthPolicy;
+  timeoutMs?: number;
+  verbose?: boolean;
+  onClientAvailable?: (controller: ActiveSessionController) => void;
+  onClientClosed?: () => void;
+};
+
 export async function runSessionSetModeDirect(
   options: RunSessionSetModeDirectOptions,
 ): Promise<SessionSetModeResult> {
@@ -207,6 +228,33 @@ export async function runSessionSetModeDirect(
     run: async (client, sessionId, record) => {
       await withTimeout(client.setSessionMode(sessionId, options.modeId), options.timeoutMs);
       setDesiredModeId(record, options.modeId);
+    },
+  });
+
+  return {
+    record: result.record,
+    resumed: result.resumed,
+    loadError: result.loadError,
+  };
+}
+
+export async function runSessionSetModelDirect(
+  options: RunSessionSetModelDirectOptions,
+): Promise<SessionSetModelResult> {
+  const result = await withConnectedSession({
+    sessionRecordId: options.sessionRecordId,
+    mcpServers: options.mcpServers,
+    nonInteractivePermissions: options.nonInteractivePermissions,
+    authCredentials: options.authCredentials,
+    authPolicy: options.authPolicy,
+    timeoutMs: options.timeoutMs,
+    verbose: options.verbose,
+    onClientAvailable: options.onClientAvailable,
+    onClientClosed: options.onClientClosed,
+    run: async (client, sessionId, record) => {
+      await withTimeout(client.setSessionModel(sessionId, options.modelId), options.timeoutMs);
+      setDesiredModelId(record, options.modelId);
+      setCurrentModelId(record, options.modelId);
     },
   });
 

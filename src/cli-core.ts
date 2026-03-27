@@ -421,6 +421,32 @@ function printSetModeResultByFormat(
   process.stdout.write(`mode set: ${modeId}\n`);
 }
 
+function printSetModelResultByFormat(
+  modelId: string,
+  result: { record: SessionRecord; resumed: boolean },
+  format: OutputFormat,
+): void {
+  if (
+    emitJsonResult(format, {
+      action: "model_set",
+      modelId,
+      resumed: result.resumed,
+      acpxRecordId: result.record.acpxRecordId,
+      acpxSessionId: result.record.acpSessionId,
+      agentSessionId: result.record.agentSessionId,
+    })
+  ) {
+    return;
+  }
+
+  if (format === "quiet") {
+    process.stdout.write(`${modelId}\n`);
+    return;
+  }
+
+  process.stdout.write(`model set: ${modelId}\n`);
+}
+
 function printSetConfigOptionResultByFormat(
   configId: string,
   value: string,
@@ -526,6 +552,40 @@ async function handleSetMode(
   printSetModeResultByFormat(modeId, result, globalFlags.format);
 }
 
+async function handleSetModel(
+  explicitAgentName: string | undefined,
+  modelId: string,
+  flags: StatusFlags,
+  command: Command,
+  config: ResolvedAcpxConfig,
+): Promise<void> {
+  const globalFlags = resolveGlobalFlags(command, config);
+  const agent = resolveAgentInvocation(explicitAgentName, globalFlags, config);
+  const { setSessionModel } = await loadSessionModule();
+  const record = await findRoutedSessionOrThrow(
+    agent.agentCommand,
+    agent.agentName,
+    agent.cwd,
+    resolveSessionNameFromFlags(flags, command),
+  );
+  const result = await setSessionModel({
+    sessionId: record.acpxRecordId,
+    modelId,
+    mcpServers: config.mcpServers,
+    nonInteractivePermissions: globalFlags.nonInteractivePermissions,
+    authCredentials: config.auth,
+    authPolicy: globalFlags.authPolicy,
+    timeoutMs: globalFlags.timeout,
+    verbose: globalFlags.verbose,
+  });
+
+  if (globalFlags.verbose && result.loadError) {
+    process.stderr.write(`[acpx] loadSession failed, started fresh session: ${result.loadError}\n`);
+  }
+
+  printSetModelResultByFormat(modelId, result, globalFlags.format);
+}
+
 async function handleSetConfigOption(
   explicitAgentName: string | undefined,
   configId: string,
@@ -536,6 +596,10 @@ async function handleSetConfigOption(
 ): Promise<void> {
   const globalFlags = resolveGlobalFlags(command, config);
   const agent = resolveAgentInvocation(explicitAgentName, globalFlags, config);
+  if (configId === "model") {
+    await handleSetModel(explicitAgentName, value, flags, command, config);
+    return;
+  }
   const resolvedConfigId = resolveCompatibleConfigId(agent, configId);
   const { setSessionConfigOption } = await loadSessionModule();
   const record = await findRoutedSessionOrThrow(

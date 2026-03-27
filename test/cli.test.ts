@@ -876,16 +876,10 @@ test("codex set model passes the requested model through unchanged", async () =>
 
     const payload = JSON.parse(result.stdout.trim()) as {
       action?: string;
-      configId?: string;
-      value?: string;
-      configOptions?: Array<{ id?: string; currentValue?: string; category?: string }>;
+      modelId?: string;
     };
-    assert.equal(payload.action, "config_set");
-    assert.equal(payload.configId, "model");
-    assert.equal(payload.value, "GPT-5-2");
-    const model = payload.configOptions?.find((option) => option.id === "model");
-    assert.equal(model?.currentValue, "GPT-5-2");
-    assert.equal(model?.category, "model");
+    assert.equal(payload.action, "model_set");
+    assert.equal(payload.modelId, "GPT-5-2");
   });
 });
 
