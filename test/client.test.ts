@@ -409,7 +409,7 @@ test("AcpClient createSession forwards claudeCode options in _meta", async () =>
   });
 });
 
-test("AcpClient createSession applies codex model via session/set_config_option", async () => {
+test("AcpClient createSession forwards codex model metadata without setting it explicitly", async () => {
   const client = makeClient({
     agentCommand: "npx @zed-industries/codex-acp",
     sessionOptions: {
@@ -418,24 +418,14 @@ test("AcpClient createSession applies codex model via session/set_config_option"
   });
 
   let capturedNewSessionParams: Record<string, unknown> | undefined;
-  let capturedSetConfigParams:
-    | {
-        sessionId: string;
-        configId: string;
-        value: string;
-      }
-    | undefined;
+  let setConfigCalled = false;
   asInternals(client).connection = {
     newSession: async (params: Record<string, unknown>) => {
       capturedNewSessionParams = params;
       return { sessionId: "session-456" };
     },
-    setSessionConfigOption: async (params: {
-      sessionId: string;
-      configId: string;
-      value: string;
-    }) => {
-      capturedSetConfigParams = params;
+    setSessionConfigOption: async () => {
+      setConfigCalled = true;
       return { configOptions: [] };
     },
   };
@@ -453,10 +443,28 @@ test("AcpClient createSession applies codex model via session/set_config_option"
       },
     },
   });
-  assert.deepEqual(capturedSetConfigParams, {
+  assert.equal(setConfigCalled, false);
+});
+
+test("AcpClient setSessionModel uses session/set_model", async () => {
+  const client = makeClient();
+
+  let capturedSetModelParams:
+    | {
+        sessionId: string;
+        modelId: string;
+      }
+    | undefined;
+  asInternals(client).connection = {
+    unstable_setSessionModel: async (params: { sessionId: string; modelId: string }) => {
+      capturedSetModelParams = params;
+    },
+  };
+
+  await client.setSessionModel("session-456", "GPT-5-2");
+  assert.deepEqual(capturedSetModelParams, {
     sessionId: "session-456",
-    configId: "model",
-    value: "GPT-5-2",
+    modelId: "GPT-5-2",
   });
 });
 
