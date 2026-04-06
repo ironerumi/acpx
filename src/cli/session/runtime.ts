@@ -12,6 +12,7 @@ import {
   applyConversation,
   applyLifecycleSnapshotToRecord,
 } from "../../runtime/engine/lifecycle.js";
+import { runPromptTurn } from "../../runtime/engine/prompt-turn.js";
 import { connectAndLoadSession } from "../../runtime/engine/reconnect.js";
 import { sessionOptionsFromRecord } from "../../runtime/engine/session-options.js";
 import {
@@ -348,7 +349,7 @@ async function runSessionPrompt(options: RunSessionPromptOptions): Promise<Sessi
   });
   const conversation = cloneSessionConversation(record);
   let acpxState = cloneSessionAcpxState(record.acpx);
-  recordPromptSubmission(conversation, options.prompt, isoNow());
+  const promptMessageId = recordPromptSubmission(conversation, options.prompt, isoNow());
 
   output.setContext({
     sessionId: record.acpxRecordId,
@@ -514,20 +515,31 @@ async function runSessionPrompt(options: RunSessionPromptOptions): Promise<Sessi
         for (let attempt = 0; ; attempt++) {
           try {
             const promptStartedAt = Date.now();
-            const promptPromise = client.prompt(activeSessionId, options.prompt);
-            if (attempt === 0 && options.onPromptActive) {
-              try {
-                await options.onPromptActive();
-              } catch (error) {
-                if (options.verbose) {
-                  process.stderr.write(
-                    "[acpx] onPromptActive hook failed: " + formatErrorMessage(error) + "\n",
-                  );
-                }
-              }
-            }
             response = await measurePerf("runtime.prompt.agent_turn", async () => {
-              return await withTimeout(promptPromise, options.timeoutMs);
+              return await runPromptTurn({
+                client,
+                sessionId: activeSessionId,
+                prompt: options.prompt,
+                timeoutMs: options.timeoutMs,
+                conversation,
+                promptMessageId,
+                onPromptStarted:
+                  attempt === 0 && options.onPromptActive
+                    ? async () => {
+                        try {
+                          await options.onPromptActive?.();
+                        } catch (error) {
+                          if (options.verbose) {
+                            process.stderr.write(
+                              "[acpx] onPromptActive hook failed: " +
+                                formatErrorMessage(error) +
+                                "\n",
+                            );
+                          }
+                        }
+                      }
+                    : undefined,
+              });
             });
             if (options.verbose) {
               process.stderr.write(

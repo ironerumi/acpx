@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { AcpClient } from "../../acp/client.js";
 import { normalizeOutputError } from "../../acp/error-normalization.js";
-import { withTimeout } from "../../async-control.js";
 import { textPrompt, type PromptInput } from "../../prompt-content.js";
 import {
   cloneSessionAcpxState,
@@ -32,6 +31,7 @@ import {
   applyLifecycleSnapshotToRecord,
   reconcileAgentSessionId,
 } from "./lifecycle.js";
+import { runPromptTurn } from "./prompt-turn.js";
 import { connectAndLoadSession } from "./reconnect.js";
 import { shouldReuseExistingRecord } from "./reuse-policy.js";
 
@@ -149,22 +149,6 @@ function toPromptInput(
   return blocks.length > 0 ? blocks : textPrompt(text);
 }
 
-function startTurnPrompt(params: {
-  client: AcpClient;
-  sessionId: string;
-  promptInput: PromptInput | string;
-  mode: AcpRuntimePromptMode;
-}): Promise<{ stopReason: string }> {
-  switch (params.mode) {
-    case "prompt":
-      return params.client.prompt(params.sessionId, params.promptInput);
-    case "steer":
-      // ACP currently exposes a single prompt primitive, so ACPX routes steer instructions
-      // through the same transport while higher layers preserve steer-specific policy.
-      return params.client.prompt(params.sessionId, params.promptInput);
-  }
-}
-
 function createInitialRecord(params: {
   recordId: string;
   sessionName: string;
@@ -217,6 +201,7 @@ function statusSummary(record: SessionRecord): string {
 
 export class AcpRuntimeManager {
   private readonly activeControllers = new Map<string, ActiveSessionController>();
+  private readonly pendingPersistentClients = new Map<string, AcpClient>();
 
   constructor(
     private readonly options: AcpRuntimeOptions,
@@ -260,6 +245,7 @@ export class AcpRuntimeManager {
       nonInteractivePermissions: this.options.nonInteractivePermissions,
       verbose: this.options.verbose,
     });
+    let keepClientOpen = false;
 
     try {
       await client.start();
@@ -286,9 +272,17 @@ export class AcpRuntimeManager {
       record.agentCapabilities = client.initializeResult?.agentCapabilities;
       applyLifecycleSnapshotToRecord(record, client.getAgentLifecycleSnapshot());
       await this.options.sessionStore.save(record);
+      if (input.mode === "persistent") {
+        const previousClient = this.pendingPersistentClients.get(record.acpxRecordId);
+        this.pendingPersistentClients.set(record.acpxRecordId, client);
+        keepClientOpen = true;
+        await previousClient?.close().catch(() => {});
+      }
       return record;
     } finally {
-      await client.close();
+      if (!keepClientOpen) {
+        await client.close();
+      }
     }
   }
 
@@ -299,24 +293,35 @@ export class AcpRuntimeManager {
     mode: AcpRuntimePromptMode;
     sessionMode: "persistent" | "oneshot";
     requestId: string;
+    timeoutMs?: number;
     signal?: AbortSignal;
   }): AsyncIterable<AcpRuntimeEvent> {
     const record = await this.requireRecord(input.handle.acpxRecordId ?? input.handle.sessionKey);
     const conversation = cloneSessionConversation(record);
     let acpxState = cloneSessionAcpxState(record.acpx);
     const promptInput = toPromptInput(input.text, input.attachments);
-    recordPromptSubmission(conversation, promptInput, isoNow());
+    const promptMessageId = recordPromptSubmission(conversation, promptInput, isoNow());
     trimConversationForRuntime(conversation);
 
     const queue = new AsyncEventQueue();
-    const client = this.createClient({
-      agentCommand: record.agentCommand,
-      cwd: record.cwd,
-      mcpServers: [...(this.options.mcpServers ?? [])],
-      permissionMode: this.options.permissionMode,
-      nonInteractivePermissions: this.options.nonInteractivePermissions,
-      verbose: this.options.verbose,
-    });
+    let pendingClient = this.pendingPersistentClients.get(record.acpxRecordId);
+    if (pendingClient) {
+      this.pendingPersistentClients.delete(record.acpxRecordId);
+      if (!pendingClient.hasReusableSession(record.acpSessionId)) {
+        await pendingClient.close().catch(() => {});
+        pendingClient = undefined;
+      }
+    }
+    const client =
+      pendingClient ??
+      this.createClient({
+        agentCommand: record.agentCommand,
+        cwd: record.cwd,
+        mcpServers: [...(this.options.mcpServers ?? [])],
+        permissionMode: this.options.permissionMode,
+        nonInteractivePermissions: this.options.nonInteractivePermissions,
+        verbose: this.options.verbose,
+      });
     let activeSessionId = record.acpSessionId;
     let sawDone = false;
     let pendingCancel = false;
@@ -413,22 +418,28 @@ export class AcpRuntimeManager {
           },
         });
 
-        const { sessionId, resumed, loadError } = await connectAndLoadSession({
-          client,
-          record,
-          resumePolicy: resumePolicyForSessionMode(input.sessionMode),
-          timeoutMs: this.options.timeoutMs,
-          activeController,
-          onClientAvailable: (controller) => {
-            this.activeControllers.set(record.acpxRecordId, controller);
-          },
-          onConnectedRecord: (connectedRecord) => {
-            connectedRecord.lastPromptAt = isoNow();
-          },
-          onSessionIdResolved: (sessionIdValue) => {
-            activeSessionId = sessionIdValue;
-          },
-        });
+        const { sessionId, resumed, loadError } = pendingClient
+          ? {
+              sessionId: record.acpSessionId,
+              resumed: false,
+              loadError: undefined,
+            }
+          : await connectAndLoadSession({
+              client,
+              record,
+              resumePolicy: resumePolicyForSessionMode(input.sessionMode),
+              timeoutMs: this.options.timeoutMs,
+              activeController,
+              onClientAvailable: (controller) => {
+                this.activeControllers.set(record.acpxRecordId, controller);
+              },
+              onConnectedRecord: (connectedRecord) => {
+                connectedRecord.lastPromptAt = isoNow();
+              },
+              onSessionIdResolved: (sessionIdValue) => {
+                activeSessionId = sessionIdValue;
+              },
+            });
         sessionReady.resolve();
 
         record.lastRequestId = input.requestId;
@@ -454,17 +465,15 @@ export class AcpRuntimeManager {
           return;
         }
 
-        const responsePromise = withTimeout(
-          startTurnPrompt({
-            client,
-            sessionId,
-            promptInput,
-            mode: input.mode,
-          }),
-          this.options.timeoutMs,
-        );
         await applyPendingCancel();
-        const response = await responsePromise;
+        const response = await runPromptTurn({
+          client,
+          sessionId,
+          prompt: promptInput,
+          timeoutMs: input.timeoutMs ?? this.options.timeoutMs,
+          conversation,
+          promptMessageId,
+        });
 
         record.acpSessionId = activeSessionId;
         reconcileAgentSessionId(record, record.agentSessionId);
