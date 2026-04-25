@@ -2,11 +2,16 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { serializeSessionRecordForDisk } from "../src/session/persistence.js";
-import type { SessionRecord } from "../src/types.js";
+import {
+  fileExists,
+  makeSessionRecord as makeSessionRecordFixture,
+  sessionFilePath,
+  withTempHome as withTempHomeFixture,
+  writeSessionRecordFile as writeSessionRecord,
+} from "./runtime-test-helpers.js";
 
 type SessionModule = typeof import("../src/session/session.js");
 
@@ -450,92 +455,13 @@ async function loadSessionModule(): Promise<SessionModule> {
 }
 
 async function withTempHome(run: (homeDir: string) => Promise<void>): Promise<void> {
-  const originalHome = process.env.HOME;
-  const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-test-home-"));
-  process.env.HOME = tempHome;
-
-  try {
-    await run(tempHome);
-  } finally {
-    if (originalHome == null) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
-    await fs.rm(tempHome, { recursive: true, force: true });
-  }
+  await withTempHomeFixture("acpx-test-home-", run);
 }
 
 function makeSessionRecord(
-  overrides: Partial<SessionRecord> & {
-    acpxRecordId: string;
-    acpSessionId: string;
-    agentCommand: string;
-    cwd: string;
-  },
-): SessionRecord {
-  const timestamp = "2026-01-01T00:00:00.000Z";
-  return {
-    schema: "acpx.session.v1",
-    acpxRecordId: overrides.acpxRecordId,
-    acpSessionId: overrides.acpSessionId,
-    agentSessionId: overrides.agentSessionId,
-    agentCommand: overrides.agentCommand,
-    cwd: path.resolve(overrides.cwd),
-    name: overrides.name,
-    createdAt: overrides.createdAt ?? timestamp,
-    lastUsedAt: overrides.lastUsedAt ?? timestamp,
-    lastSeq: overrides.lastSeq ?? 0,
-    lastRequestId: overrides.lastRequestId,
-    eventLog: overrides.eventLog ?? {
-      active_path: `.stream.ndjson`,
-      segment_count: 1,
-      max_segment_bytes: 1024,
-      max_segments: 1,
-      last_write_at: overrides.lastUsedAt ?? timestamp,
-      last_write_error: null,
-    },
-    closed: overrides.closed ?? false,
-    closedAt: overrides.closedAt,
-    pid: overrides.pid,
-    agentStartedAt: overrides.agentStartedAt,
-    lastPromptAt: overrides.lastPromptAt,
-    lastAgentExitCode: overrides.lastAgentExitCode,
-    lastAgentExitSignal: overrides.lastAgentExitSignal,
-    lastAgentExitAt: overrides.lastAgentExitAt,
-    lastAgentDisconnectReason: overrides.lastAgentDisconnectReason,
-    protocolVersion: overrides.protocolVersion,
-    agentCapabilities: overrides.agentCapabilities,
-    title: overrides.title ?? null,
-    messages: overrides.messages ?? [],
-    updated_at: overrides.updated_at ?? overrides.lastUsedAt ?? timestamp,
-    cumulative_token_usage: overrides.cumulative_token_usage ?? {},
-    request_token_usage: overrides.request_token_usage ?? {},
-    acpx: overrides.acpx,
-  };
-}
-
-function sessionFilePath(homeDir: string, acpxRecordId: string): string {
-  return path.join(homeDir, ".acpx", "sessions", `${encodeURIComponent(acpxRecordId)}.json`);
-}
-
-async function writeSessionRecord(homeDir: string, record: SessionRecord): Promise<void> {
-  const filePath = sessionFilePath(homeDir, record.acpxRecordId);
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(
-    filePath,
-    `${JSON.stringify(serializeSessionRecordForDisk(record), null, 2)}\n`,
-    "utf8",
-  );
-}
-
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
+  overrides: Parameters<typeof makeSessionRecordFixture>[0],
+): ReturnType<typeof makeSessionRecordFixture> {
+  return makeSessionRecordFixture(overrides, { defaultName: false, defaultAcpx: false });
 }
 
 async function waitForExit(pid: number | undefined): Promise<boolean> {

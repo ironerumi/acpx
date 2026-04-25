@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { SessionModelState, SetSessionConfigOptionResponse } from "@agentclientprotocol/sdk";
@@ -8,7 +7,10 @@ import {
   connectAndLoadSession,
   type ConnectedSessionController,
 } from "../src/runtime/engine/reconnect.js";
-import type { SessionRecord } from "../src/types.js";
+import {
+  makeSessionRecord as makeSessionRecordFixture,
+  withTempHome as withTempHomeFixture,
+} from "./runtime-test-helpers.js";
 
 type FakeClient = {
   hasReusableSession: (sessionId: string) => boolean;
@@ -885,68 +887,11 @@ test("connectAndLoadSession reuses an already loaded client session", async () =
 });
 
 function makeSessionRecord(
-  overrides: Partial<SessionRecord> & {
-    acpxRecordId: string;
-    acpSessionId: string;
-    agentCommand: string;
-    cwd: string;
-  },
-): SessionRecord {
-  const timestamp = "2026-01-01T00:00:00.000Z";
-  return {
-    schema: "acpx.session.v1",
-    acpxRecordId: overrides.acpxRecordId,
-    acpSessionId: overrides.acpSessionId,
-    agentSessionId: overrides.agentSessionId,
-    agentCommand: overrides.agentCommand,
-    cwd: path.resolve(overrides.cwd),
-    name: overrides.name,
-    createdAt: overrides.createdAt ?? timestamp,
-    lastUsedAt: overrides.lastUsedAt ?? timestamp,
-    lastSeq: overrides.lastSeq ?? 0,
-    lastRequestId: overrides.lastRequestId,
-    eventLog: overrides.eventLog ?? {
-      active_path: ".stream.ndjson",
-      segment_count: 1,
-      max_segment_bytes: 1024,
-      max_segments: 1,
-      last_write_at: overrides.lastUsedAt ?? timestamp,
-      last_write_error: null,
-    },
-    closed: overrides.closed ?? false,
-    closedAt: overrides.closedAt,
-    pid: overrides.pid,
-    agentStartedAt: overrides.agentStartedAt,
-    lastPromptAt: overrides.lastPromptAt,
-    lastAgentExitCode: overrides.lastAgentExitCode,
-    lastAgentExitSignal: overrides.lastAgentExitSignal,
-    lastAgentExitAt: overrides.lastAgentExitAt,
-    lastAgentDisconnectReason: overrides.lastAgentDisconnectReason,
-    protocolVersion: overrides.protocolVersion,
-    agentCapabilities: overrides.agentCapabilities,
-    title: overrides.title ?? null,
-    messages: overrides.messages ?? [],
-    updated_at: overrides.updated_at ?? overrides.lastUsedAt ?? timestamp,
-    cumulative_token_usage: overrides.cumulative_token_usage ?? {},
-    request_token_usage: overrides.request_token_usage ?? {},
-    acpx: overrides.acpx,
-  };
+  overrides: Parameters<typeof makeSessionRecordFixture>[0],
+): ReturnType<typeof makeSessionRecordFixture> {
+  return makeSessionRecordFixture(overrides, { defaultName: false, defaultAcpx: false });
 }
 
 async function withTempHome(run: (homeDir: string) => Promise<void>): Promise<void> {
-  const originalHome = process.env.HOME;
-  const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-connect-load-home-"));
-  process.env.HOME = homeDir;
-
-  try {
-    await run(homeDir);
-  } finally {
-    if (originalHome == null) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
-
-    await fs.rm(homeDir, { recursive: true, force: true });
-  }
+  await withTempHomeFixture("acpx-connect-load-home-", run);
 }
