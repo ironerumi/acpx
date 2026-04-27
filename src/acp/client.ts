@@ -70,6 +70,7 @@ import {
 } from "./agent-command.js";
 import {
   buildAgentSpawnOptions,
+  describeAuthCredentialEnvNames,
   readEnvCredential,
   resolveConfiguredAuthCredential,
 } from "./auth-env.js";
@@ -1164,9 +1165,7 @@ export class AcpClient {
         );
       }
 
-      this.log(
-        `agent advertised auth methods [${methods.map((m) => m.id).join(", ")}] but no matching credentials found — skipping (agent may handle auth internally)`,
-      );
+      this.warnNoMatchingAuthCredentials(methods);
       return;
     }
 
@@ -1175,6 +1174,32 @@ export class AcpClient {
     });
 
     this.log(`authenticated with method ${selected.methodId} (${selected.source})`);
+  }
+
+  private warnNoMatchingAuthCredentials(methods: AuthMethod[]): void {
+    const ids = methods.map((m) => m.id).join(", ");
+    const lines: string[] = [
+      `[acpx] agent advertised auth methods [${ids}] but no matching credentials were configured.`,
+      `[acpx] To authenticate via acpx, set ONE of:`,
+    ];
+    for (const method of methods) {
+      const names = describeAuthCredentialEnvNames(method.id);
+      if (names.prefixed) {
+        lines.push(`[acpx]   export ${names.prefixed}=<credential>`);
+      }
+      lines.push(`[acpx]   ~/.acpx/config.json  →  auth.${method.id}: <credential>`);
+    }
+    const bareHints = methods
+      .map((m) => describeAuthCredentialEnvNames(m.id).bare)
+      .filter((bare): bare is string => Boolean(bare));
+    if (bareHints.length > 0) {
+      lines.push(
+        `[acpx] Continuing — agents that read native env vars (e.g. ${bareHints.join(", ")}) directly may still authenticate.`,
+      );
+    } else {
+      lines.push(`[acpx] Continuing — the agent may still authenticate internally.`);
+    }
+    process.stderr.write(`${lines.join("\n")}\n`);
   }
 
   private async handlePermissionRequest(

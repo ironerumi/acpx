@@ -98,6 +98,17 @@ export function resolveConfiguredAuthCredential(
   return configCredentials[methodId] ?? configCredentials[toEnvToken(methodId)];
 }
 
+export function describeAuthCredentialEnvNames(methodId: string): {
+  prefixed: string | undefined;
+  bare: string | undefined;
+} {
+  const bare = toEnvToken(methodId);
+  if (bare.length === 0) {
+    return { prefixed: undefined, bare: undefined };
+  }
+  return { prefixed: `${AUTH_ENV_PREFIX}${bare}`, bare };
+}
+
 export function buildAgentSpawnOptions(
   cwd: string,
   authCredentials: Record<string, string> | undefined,

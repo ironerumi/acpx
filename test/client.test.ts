@@ -274,6 +274,37 @@ test("AcpClient ignores ambient normalized provider env vars for auth selection"
   );
 });
 
+test("AcpClient authenticateIfRequired warns with actionable env/config hints when skipping", async () => {
+  await withEnv(
+    {
+      ACPX_AUTH_FACTORY_API_KEY: undefined,
+      FACTORY_API_KEY: undefined,
+    },
+    async () => {
+      const client = makeClient();
+      const internals = asInternals(client);
+
+      const writes: string[] = [];
+      await withStderrCapture(writes, async () => {
+        await internals.authenticateIfRequired?.(
+          {
+            authenticate: async () => {
+              throw new Error("authenticate should not be called");
+            },
+          },
+          [{ id: "factory-api-key" }],
+        );
+      });
+
+      const output = writes.join("");
+      assert.match(output, /agent advertised auth methods \[factory-api-key\]/);
+      assert.match(output, /export ACPX_AUTH_FACTORY_API_KEY=/);
+      assert.match(output, /auth\.factory-api-key/);
+      assert.match(output, /native env vars \(e\.g\. FACTORY_API_KEY\)/);
+    },
+  );
+});
+
 test("AcpClient authenticateIfRequired throws when auth policy is fail and credentials are missing", async () => {
   const client = makeClient({ authPolicy: "fail" });
   const internals = asInternals(client);
@@ -834,6 +865,19 @@ async function withEnv(
         process.env[key] = value;
       }
     }
+  }
+}
+
+async function withStderrCapture(writes: string[], run: () => Promise<void> | void): Promise<void> {
+  const original = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    await run();
+  } finally {
+    process.stderr.write = original;
   }
 }
 

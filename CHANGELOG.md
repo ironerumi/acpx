@@ -13,6 +13,7 @@ Repo: https://github.com/openclaw/acpx
 ### Fixes
 
 - CLI/models: fail clearly when `--model` targets a non-Claude ACP agent that does not advertise ACP model support, and reject model ids outside an adapter's advertised `availableModels` instead of silently falling back to the adapter default.
+- ACP/auth: surface an actionable hint on stderr when an agent advertises auth methods (e.g. droid's `factory-api-key`) but no matching credentials are configured, listing the `ACPX_AUTH_<METHOD_ID>` env var, the `~/.acpx/config.json` entry, and the agent-native env var to set. Document `FACTORY_API_KEY` requirements in [`agents/Droid.md`](agents/Droid.md).
 
 ## 2026.4.25 (v0.6.0)
 

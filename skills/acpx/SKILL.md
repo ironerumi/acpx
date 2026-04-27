@@ -79,6 +79,7 @@ Friendly agent names resolve to commands:
 - `cursor` -> `cursor-agent acp`
 - `copilot` -> `copilot --acp --stdio`
 - `droid` -> `droid exec --output-format acp` (`factory-droid` and `factorydroid` also resolve to `droid`)
+  Requires `FACTORY_API_KEY` (or `ACPX_AUTH_FACTORY_API_KEY`); see [`agents/Droid.md`](../../agents/Droid.md).
 - `iflow` -> `iflow --experimental-acp`
 - `kilocode` -> `npx -y @kilocode/cli acp`
 - `kimi` -> `kimi acp`
