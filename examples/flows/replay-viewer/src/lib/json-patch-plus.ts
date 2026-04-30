@@ -168,7 +168,12 @@ function setValueAtPointer(document: unknown, path: string, value: unknown): voi
     throw new Error(`Cannot set value at non-object parent for ${path}`);
   }
   assertSafeObjectKey(lastToken, path);
-  (parent as Record<string, unknown>)[lastToken] = value;
+  Object.defineProperty(parent, lastToken, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
 }
 
 function resolveParentPointer(
