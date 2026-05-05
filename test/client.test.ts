@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk";
@@ -413,6 +414,7 @@ test("AcpClient client-method permission errors update permission stats", async 
 });
 
 test("AcpClient createSession forwards claudeCode options in _meta", async () => {
+  const cwd = path.resolve("/tmp/acpx-client-meta");
   const client = makeClient({
     sessionOptions: {
       model: "sonnet",
@@ -432,7 +434,7 @@ test("AcpClient createSession forwards claudeCode options in _meta", async () =>
   const result = await client.createSession("/tmp/acpx-client-meta");
   assert.equal(result.sessionId, "session-123");
   assert.deepEqual(capturedParams, {
-    cwd: "/tmp/acpx-client-meta",
+    cwd,
     mcpServers: [],
     _meta: {
       claudeCode: {
@@ -447,6 +449,7 @@ test("AcpClient createSession forwards claudeCode options in _meta", async () =>
 });
 
 test("AcpClient createSession forwards systemPrompt string in _meta", async () => {
+  const cwd = path.resolve("/tmp/acpx-client-system-prompt");
   const client = makeClient({
     sessionOptions: {
       systemPrompt: "you are an obsidian assistant",
@@ -463,7 +466,7 @@ test("AcpClient createSession forwards systemPrompt string in _meta", async () =
 
   await client.createSession("/tmp/acpx-client-system-prompt");
   assert.deepEqual(capturedParams, {
-    cwd: "/tmp/acpx-client-system-prompt",
+    cwd,
     mcpServers: [],
     _meta: {
       systemPrompt: "you are an obsidian assistant",
@@ -472,6 +475,7 @@ test("AcpClient createSession forwards systemPrompt string in _meta", async () =
 });
 
 test("AcpClient createSession forwards systemPrompt append in _meta alongside claudeCode options", async () => {
+  const cwd = path.resolve("/tmp/acpx-client-system-prompt-append");
   const client = makeClient({
     sessionOptions: {
       model: "sonnet",
@@ -489,7 +493,7 @@ test("AcpClient createSession forwards systemPrompt append in _meta alongside cl
 
   await client.createSession("/tmp/acpx-client-system-prompt-append");
   assert.deepEqual(capturedParams, {
-    cwd: "/tmp/acpx-client-system-prompt-append",
+    cwd,
     mcpServers: [],
     _meta: {
       claudeCode: {
@@ -503,6 +507,7 @@ test("AcpClient createSession forwards systemPrompt append in _meta alongside cl
 });
 
 test("AcpClient createSession forwards codex model metadata without setting it explicitly", async () => {
+  const cwd = path.resolve("/tmp/acpx-client-codex-model");
   const client = makeClient({
     agentCommand: "npx @zed-industries/codex-acp",
     sessionOptions: {
@@ -526,7 +531,7 @@ test("AcpClient createSession forwards codex model metadata without setting it e
   const result = await client.createSession("/tmp/acpx-client-codex-model");
   assert.equal(result.sessionId, "session-456");
   assert.deepEqual(capturedNewSessionParams, {
-    cwd: "/tmp/acpx-client-codex-model",
+    cwd,
     mcpServers: [],
     _meta: {
       claudeCode: {

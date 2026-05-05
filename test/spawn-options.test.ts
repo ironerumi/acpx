@@ -132,9 +132,11 @@ test("buildSpawnCommandOptions keeps shell disabled for non-batch commands", asy
 
 test("resolveAgentSessionCwd translates WSL cwd for Windows exe agents", async () => {
   let capturedCwd: string | undefined;
+  const inputCwd = "/home/user/project";
+  const resolvedCwd = path.resolve(inputCwd);
 
   const cwd = await resolveAgentSessionCwd(
-    "/home/user/project",
+    inputCwd,
     '"/mnt/c/Users/User/AppData/Local/GitHub CLI/copilot/copilot.exe" --acp --stdio',
     {
       platform: "linux",
@@ -146,7 +148,7 @@ test("resolveAgentSessionCwd translates WSL cwd for Windows exe agents", async (
     },
   );
 
-  assert.equal(capturedCwd, "/home/user/project");
+  assert.equal(capturedCwd, resolvedCwd);
   assert.equal(cwd, "\\\\wsl.localhost\\Ubuntu\\home\\user\\project");
 });
 
@@ -158,7 +160,8 @@ test("resolveAgentSessionCwd leaves non-WSL and non-Windows agents on resolved c
       throw new Error("wslpath should not run");
     },
   });
-  const wslNodeAgent = await resolveAgentSessionCwd("/home/user/project", "node ./agent.js", {
+  const inputCwd = "/home/user/project";
+  const wslNodeAgent = await resolveAgentSessionCwd(inputCwd, "node ./agent.js", {
     platform: "linux",
     existsSync: (filePath) => filePath === "/proc/sys/fs/binfmt_misc/WSLInterop",
     runWslpath: async () => {
@@ -167,14 +170,16 @@ test("resolveAgentSessionCwd leaves non-WSL and non-Windows agents on resolved c
   });
 
   assert.equal(nonWsl, path.resolve("relative/project"));
-  assert.equal(wslNodeAgent, "/home/user/project");
+  assert.equal(wslNodeAgent, path.resolve(inputCwd));
 });
 
 test("resolveAgentSessionCwd translates WSL cwd for Windows .cmd wrappers", async () => {
   let capturedCwd: string | undefined;
+  const inputCwd = "/home/user/project";
+  const resolvedCwd = path.resolve(inputCwd);
 
   const cwd = await resolveAgentSessionCwd(
-    "/home/user/project",
+    inputCwd,
     '"/mnt/c/Program Files/nodejs/npx.cmd" some-acp-agent --stdio',
     {
       platform: "linux",
@@ -186,14 +191,16 @@ test("resolveAgentSessionCwd translates WSL cwd for Windows .cmd wrappers", asyn
     },
   );
 
-  assert.equal(capturedCwd, "/home/user/project");
+  assert.equal(capturedCwd, resolvedCwd);
   assert.equal(cwd, "\\\\wsl.localhost\\Ubuntu\\home\\user\\project");
 });
 
 test("resolveAgentSessionCwd translates WSL cwd for Windows agents on non-C drives", async () => {
   let capturedCwd: string | undefined;
+  const inputCwd = "/home/user/project";
+  const resolvedCwd = path.resolve(inputCwd);
 
-  const cwd = await resolveAgentSessionCwd("/home/user/project", "/mnt/d/tools/agent.bat --acp", {
+  const cwd = await resolveAgentSessionCwd(inputCwd, "/mnt/d/tools/agent.bat --acp", {
     platform: "linux",
     existsSync: (filePath) => filePath === "/proc/sys/fs/binfmt_misc/WSLInterop",
     runWslpath: async (value) => {
@@ -202,12 +209,13 @@ test("resolveAgentSessionCwd translates WSL cwd for Windows agents on non-C driv
     },
   });
 
-  assert.equal(capturedCwd, "/home/user/project");
+  assert.equal(capturedCwd, resolvedCwd);
   assert.equal(cwd, "\\\\wsl.localhost\\Ubuntu\\home\\user\\project");
 });
 
 test("resolveAgentSessionCwd does not translate WSL cwd for extension-less commands under /mnt/<drive>/", async () => {
-  const cwd = await resolveAgentSessionCwd("/home/user/project", "/mnt/c/tools/linux-agent --acp", {
+  const inputCwd = "/home/user/project";
+  const cwd = await resolveAgentSessionCwd(inputCwd, "/mnt/c/tools/linux-agent --acp", {
     platform: "linux",
     existsSync: (filePath) => filePath === "/proc/sys/fs/binfmt_misc/WSLInterop",
     runWslpath: async () => {
@@ -215,7 +223,7 @@ test("resolveAgentSessionCwd does not translate WSL cwd for extension-less comma
     },
   });
 
-  assert.equal(cwd, "/home/user/project");
+  assert.equal(cwd, path.resolve(inputCwd));
 });
 
 test("resolveAgentSessionCwd rejects empty wslpath output", async () => {
