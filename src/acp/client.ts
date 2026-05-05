@@ -64,6 +64,7 @@ import {
   isQoderAcpCommand,
   resolveAgentCloseAfterStdinEndMs,
   resolveClaudeAcpSessionCreateTimeoutMs,
+  resolveClaudeCodeExecutable,
   resolveGeminiAcpStartupTimeoutMs,
   resolveGeminiCommandArgs,
   shouldIgnoreNonJsonAgentOutputLine,
@@ -436,13 +437,23 @@ export class AcpClient {
       await ensureCopilotAcpSupport(spawnCommand);
     }
 
+    const agentSpawnOptions = buildAgentSpawnOptions(
+      this.options.cwd,
+      this.options.authCredentials,
+    );
+    const claudeAcp = isClaudeAcpCommand(spawnCommand, args);
+    if (claudeAcp) {
+      const claudeExe = resolveClaudeCodeExecutable(process.platform, agentSpawnOptions.env);
+      if (claudeExe) {
+        agentSpawnOptions.env.CLAUDE_CODE_EXECUTABLE = claudeExe;
+        this.log(`resolved system Claude Code executable: ${claudeExe}`);
+      }
+    }
+
     const spawnedChild = spawn(
       spawnCommand,
       args,
-      buildSpawnCommandOptions(
-        spawnCommand,
-        buildAgentSpawnOptions(this.options.cwd, this.options.authCredentials),
-      ),
+      buildSpawnCommandOptions(spawnCommand, agentSpawnOptions),
     ) as ChildProcessByStdio<Writable, Readable, Readable>;
 
     try {

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { resolveClaudeCodeExecutable } from "../src/acp/agent-command.js";
 import { resolveAgentSessionCwd } from "../src/acp/client-process.js";
 import { buildAgentSpawnOptions, buildSpawnCommandOptions } from "../src/acp/client.js";
 import { buildTerminalSpawnOptions } from "../src/acp/terminal-manager.js";
@@ -226,4 +227,59 @@ test("buildTerminalSpawnOptions keeps shell disabled for non-batch commands", as
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("resolveClaudeCodeExecutable finds claude.exe on PATH on Windows", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-claude-exe-"));
+  try {
+    await fs.writeFile(path.join(tempDir, "claude.exe"), "");
+    const env = { PATH: tempDir, PATHEXT: ".COM;.EXE;.BAT;.CMD" } as NodeJS.ProcessEnv;
+    const result = resolveClaudeCodeExecutable("win32", env);
+    assert.equal(result, path.join(tempDir, "claude.exe"));
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("resolveClaudeCodeExecutable returns undefined when CLAUDE_CODE_EXECUTABLE is already set", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-claude-exe-"));
+  try {
+    await fs.writeFile(path.join(tempDir, "claude.exe"), "");
+    const env = {
+      PATH: tempDir,
+      PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      CLAUDE_CODE_EXECUTABLE: "/custom/claude",
+    } as NodeJS.ProcessEnv;
+    const result = resolveClaudeCodeExecutable("win32", env);
+    assert.equal(result, undefined);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("resolveClaudeCodeExecutable respects case-insensitive env var on Windows", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "acpx-claude-exe-"));
+  try {
+    await fs.writeFile(path.join(tempDir, "claude.exe"), "");
+    const env = {
+      PATH: tempDir,
+      PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      claude_code_executable: "/custom/claude",
+    } as NodeJS.ProcessEnv;
+    const result = resolveClaudeCodeExecutable("win32", env);
+    assert.equal(result, undefined);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("resolveClaudeCodeExecutable returns undefined on non-Windows platforms", () => {
+  const result = resolveClaudeCodeExecutable("linux", { PATH: "/usr/bin" } as NodeJS.ProcessEnv);
+  assert.equal(result, undefined);
+});
+
+test("resolveClaudeCodeExecutable returns undefined when claude is not on PATH", () => {
+  const env = { PATH: "/nonexistent", PATHEXT: ".COM;.EXE;.BAT;.CMD" } as NodeJS.ProcessEnv;
+  const result = resolveClaudeCodeExecutable("win32", env);
+  assert.equal(result, undefined);
 });
