@@ -56,9 +56,13 @@ a:hover{text-decoration:underline;text-underline-offset:.2em}
 .sidebar-head{display:flex;align-items:center;gap:10px;margin-bottom:24px}
 .brand{display:flex;align-items:center;gap:11px;color:var(--ink);text-decoration:none;flex:1;min-width:0}
 .brand:hover{text-decoration:none}
-.brand .mark{flex:0 0 30px;width:30px;height:30px;border-radius:8px;background:var(--ink);position:relative;overflow:hidden;display:grid;place-items:center;color:#7dd3fc;font:700 14px/1 "JetBrains Mono","SF Mono",ui-monospace,monospace;letter-spacing:0}
-.brand .mark::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(14,165,233,.35),transparent 55%,rgba(168,85,247,.35));pointer-events:none}
-.brand .mark span{position:relative;z-index:1}
+.brand .mark{flex:0 0 34px;width:34px;height:34px;border-radius:9px;background:var(--ink);position:relative;overflow:hidden;display:grid;place-items:center;box-shadow:0 1px 0 rgba(255,255,255,.05) inset,0 8px 24px -10px rgba(14,165,233,.45)}
+.brand .mark::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 120% at 0% 0%,rgba(14,165,233,.55),transparent 55%),radial-gradient(120% 120% at 100% 100%,rgba(168,85,247,.55),transparent 55%);pointer-events:none}
+.brand .mark::after{content:"";position:absolute;inset:1px;border-radius:8px;border:1px solid rgba(255,255,255,.08);pointer-events:none}
+.brand .mark svg{position:relative;z-index:1;width:20px;height:20px;display:block}
+.brand .mark .cursor{transform-origin:center;animation:acpx-blink 1.2s steps(2,jump-none) infinite}
+@keyframes acpx-blink{0%,49%{opacity:1}50%,100%{opacity:.25}}
+@media (prefers-reduced-motion: reduce){.brand .mark .cursor{animation:none}}
 .brand strong{display:block;font-size:1.05rem;line-height:1.1;font-weight:600;letter-spacing:0;color:var(--ink)}
 .brand small{display:block;color:var(--muted);font-size:.74rem;margin-top:3px;font-weight:400}
 .theme-toggle{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:var(--paper);color:var(--muted);cursor:pointer;padding:0;transition:border-color .15s,color .15s,background-color .15s,transform .12s}
@@ -130,6 +134,16 @@ body:not(.home) .doc>h1:first-child{display:none}
 .doc pre::-webkit-scrollbar{height:8px;width:8px}
 .doc pre::-webkit-scrollbar-thumb{background:#334155;border-radius:8px}
 .doc pre code{display:block;background:transparent;border:0;color:inherit;padding:0;font-size:1em;white-space:pre}
+.doc pre .hl-com{color:#7a8597;font-style:italic}
+.doc pre .hl-str{color:#86efac}
+.doc pre .hl-num{color:#fbbf24}
+.doc pre .hl-kw{color:#c4b5fd;font-weight:500}
+.doc pre .hl-lit{color:#f0abfc}
+.doc pre .hl-flag{color:#7dd3fc}
+.doc pre .hl-var{color:#fca5a5}
+.doc pre .hl-prop{color:#7dd3fc}
+.doc pre .hl-op{color:#94a3b8}
+.doc pre .hl-typ{color:#fde68a}
 .doc pre .copy{position:absolute;top:8px;right:8px;background:rgba(255,255,255,.06);color:var(--code-fg);border:1px solid rgba(255,255,255,.16);border-radius:6px;padding:3px 9px;font:500 .7rem/1 "Inter",sans-serif;cursor:pointer;opacity:0;transition:opacity .15s,background .15s,border-color .15s}
 .doc pre:hover .copy,.doc pre .copy:focus{opacity:1}
 .doc pre .copy:hover{background:rgba(255,255,255,.12)}
@@ -259,20 +273,24 @@ export function themeToggleHtml() {
 }
 
 export function brandMarkHtml() {
-  return `<span class="mark" aria-hidden="true"><span>&gt;_</span></span>`;
+  return `<span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 7.5 L11 12 L5 16.5" stroke="#7dd3fc" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect class="cursor" x="13" y="14.6" width="7" height="2.4" rx="1.2" fill="#c4b5fd"/></svg></span>`;
 }
 
 export function faviconSvg() {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="acpx">
 <defs>
-  <linearGradient id="g" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+  <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#0b0e14"/>
+    <stop offset="1" stop-color="#1a2230"/>
+  </linearGradient>
+  <linearGradient id="ring" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
     <stop offset="0" stop-color="#0ea5e9"/>
     <stop offset="1" stop-color="#a855f7"/>
   </linearGradient>
 </defs>
-<rect width="64" height="64" rx="14" fill="#0b0e14"/>
-<rect x="2" y="2" width="60" height="60" rx="13" fill="none" stroke="url(#g)" stroke-width="1.5" opacity="0.45"/>
-<path d="M16 22 L24 32 L16 42" fill="none" stroke="#7dd3fc" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="28" y="38" width="22" height="3.6" rx="1.8" fill="#a855f7"/>
+<rect width="64" height="64" rx="14" fill="url(#bg)"/>
+<rect x="1.5" y="1.5" width="61" height="61" rx="13" fill="none" stroke="url(#ring)" stroke-width="2" opacity="0.7"/>
+<path d="M14 18 L28 32 L14 46" fill="none" stroke="#7dd3fc" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="32" y="40" width="20" height="6" rx="3" fill="#c4b5fd"/>
 </svg>`;
 }

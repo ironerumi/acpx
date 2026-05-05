@@ -19,7 +19,7 @@ const cname = readCname();
 const siteBase = cname ? `https://${cname}` : "";
 
 const productName = "acpx";
-const productTagline = "Talk to coding agents from the command line";
+const productTagline = "Talk to agents from the command line";
 const productDescription =
   "Headless CLI client for the Agent Client Protocol — persistent multi-turn sessions, queue-aware prompts, structured output, and multi-step flows for Codex, Claude, Pi, OpenClaw, and any ACP-capable agent.";
 const installCommand = "npm install -g acpx";
@@ -32,6 +32,51 @@ const sections = [
   ["Flows", ["flows.md"]],
   ["Reference", ["CLI.md", "exit-codes.md", "VISION.md"]],
 ];
+
+const HIGHLIGHT_ALIASES = {
+  sh: "bash",
+  shell: "bash",
+  zsh: "bash",
+  console: "bash",
+  js: "ts",
+  javascript: "ts",
+  typescript: "ts",
+  jsonc: "json",
+};
+
+const HIGHLIGHT_RULES = {
+  bash: [
+    [/#[^\n]*/g, "com"],
+    [/'(?:[^'\\]|\\.)*'/g, "str"],
+    [/"(?:[^"\\]|\\.)*"/g, "str"],
+    [/`[^`]*`/g, "str"],
+    [/\$\{[^}]+\}|\$\w+/g, "var"],
+    [/\B-{1,2}[A-Za-z][\w-]*/g, "flag"],
+    [/\b\d+\b/g, "num"],
+    [/[|&;<>]+/g, "op"],
+  ],
+  json: [
+    [/"(?:[^"\\]|\\.)*"(?=\s*:)/g, "prop"],
+    [/"(?:[^"\\]|\\.)*"/g, "str"],
+    [/-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g, "num"],
+    [/\b(?:true|false|null)\b/g, "lit"],
+    [/[{}[\],:]/g, "op"],
+  ],
+  ts: [
+    [/\/\/[^\n]*/g, "com"],
+    [/\/\*[\s\S]*?\*\//g, "com"],
+    [/'(?:[^'\\]|\\.)*'/g, "str"],
+    [/"(?:[^"\\]|\\.)*"/g, "str"],
+    [/`(?:[^`\\]|\\.)*`/g, "str"],
+    [
+      /\b(?:const|let|var|function|return|import|export|from|default|async|await|if|else|for|while|switch|case|break|continue|new|class|interface|type|extends|implements|public|private|protected|readonly|as|in|of|typeof|instanceof|this|void|never)\b/g,
+      "kw",
+    ],
+    [/\b(?:true|false|null|undefined)\b/g, "lit"],
+    [/-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g, "num"],
+    [/\b[A-Z][A-Za-z0-9_]*\b/g, "typ"],
+  ],
+};
 
 // Internal architecture notes and stray dev docs are not part of the user-facing site.
 // They remain in the repo and are reachable from GitHub.
@@ -261,7 +306,7 @@ function markdownToHtml(markdown, currentRel) {
       flushBlockquote();
       if (fence) {
         html.push(
-          `<pre><code class="language-${escapeAttr(fence.lang)}">${escapeHtml(fence.lines.join("\n"))}</code></pre>`,
+          `<pre><code class="language-${escapeAttr(fence.lang)}">${highlight(fence.lines.join("\n"), fence.lang)}</code></pre>`,
         );
         fence = null;
       } else {
@@ -463,7 +508,7 @@ function homeHero(page) {
   ];
   return `<header class="home-hero">
         <p class="eyebrow"><span class="dot" aria-hidden="true"></span> Agent Client Protocol · Headless CLI</p>
-        <h1>Talk to coding agents <span class="accent">from the command line</span></h1>
+        <h1>Talk to agents <span class="accent">from the command line</span></h1>
         <p class="lede">${escapeHtml(description)}</p>
         <div class="home-cta">
           <a class="btn btn-primary" href="${quickstartRel}">Quickstart</a>
@@ -654,6 +699,37 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value);
+}
+
+function highlight(code, lang) {
+  const resolved = HIGHLIGHT_ALIASES[lang] || lang;
+  const rules = HIGHLIGHT_RULES[resolved];
+  if (!rules) {
+    return escapeHtml(code);
+  }
+  let out = "";
+  let i = 0;
+  while (i < code.length) {
+    let bestKind = null;
+    let bestText = null;
+    for (const [re, kind] of rules) {
+      re.lastIndex = i;
+      const m = re.exec(code);
+      if (m && m.index === i) {
+        bestKind = kind;
+        bestText = m[0];
+        break;
+      }
+    }
+    if (bestText !== null) {
+      out += `<span class="hl-${bestKind}">${escapeHtml(bestText)}</span>`;
+      i += bestText.length;
+    } else {
+      out += escapeHtml(code[i]);
+      i += 1;
+    }
+  }
+  return out;
 }
 
 function validateLinks(outputDir) {
