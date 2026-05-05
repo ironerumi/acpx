@@ -16,7 +16,7 @@ env:
 
 jobs:
   scope:
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: read
@@ -90,7 +90,7 @@ jobs:
     name: ${{ matrix.name }}
     needs: scope
     if: needs.scope.outputs.docs_only != 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     strategy:
@@ -141,7 +141,7 @@ jobs:
     name: Docs
     needs: scope
     if: needs.scope.outputs.docs_changed == 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
