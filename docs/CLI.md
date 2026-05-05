@@ -43,11 +43,11 @@ acpx [global_options] <agent> sessions [list | new [--name <name>] | ensure [--n
 
 `<agent>` can be:
 
-- built-in friendly name from [../README.md](../README.md)
+- built-in friendly name from [the README](https://github.com/openclaw/acpx/blob/main/README.md)
 - unknown token (treated as raw command)
 - overridden by `--agent <command>` escape hatch
 
-Additional built-in agent docs live in [../agents/README.md](../agents/README.md).
+Additional built-in agent docs live in [the Agents page](agents.md).
 
 Prompt options:
 
@@ -198,7 +198,7 @@ acpx [global_options] claude sessions [list | new [--name <name>] | ensure [--na
 
 Built-in command mapping: `claude -> npx -y @agentclientprotocol/claude-agent-acp`
 
-Additional built-in agent docs live in [../agents/README.md](../agents/README.md).
+Additional built-in agent docs live in [the Agents page](agents.md).
 
 ### Custom positional agents
 
