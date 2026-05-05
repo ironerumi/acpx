@@ -369,7 +369,7 @@ function inline(text, currentRel) {
   const stash = [];
   let out = text.replace(/`([^`]+)`/g, (_, code) => {
     stash.push(`<code>${escapeHtml(code)}</code>`);
-    return `@@ACPX_CODE_${stash.length - 1}@@`;
+    return `@@ACPXCODE${stash.length - 1}@@`;
   });
   out = escapeHtml(out)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -382,7 +382,7 @@ function inline(text, currentRel) {
     .replace(/&lt;(https?:\/\/[^\s<>]+)&gt;/g, '<a href="$1">$1</a>');
   out = out.replace(/\\\|/g, "|");
   out = out.replace(/&lt;br&gt;/g, "<br>");
-  return out.replace(/@@ACPX_CODE_(\d+)@@/g, (_, i) => stash[Number(i)]);
+  return out.replace(/@@ACPXCODE(\d+)@@/g, (_, i) => stash[Number(i)]);
 }
 
 function rewriteHref(href, currentRel) {
