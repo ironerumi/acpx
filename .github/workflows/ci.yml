@@ -71,6 +71,7 @@ jobs:
                 fi
                 ;;
               .github/workflows/ci.yml)
+                docs_only=false
                 ;;
               *)
                 docs_only=false
