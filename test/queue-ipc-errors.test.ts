@@ -513,6 +513,7 @@ test("SessionQueueOwner emits typed invalid request payload errors", async () =>
 
     const owner = await SessionQueueOwner.start(lease, {
       cancelPrompt: async () => false,
+      closeSession: async () => false,
       setSessionMode: async () => {
         // no-op
       },
@@ -560,6 +561,7 @@ test("SessionQueueOwner emits typed shutdown errors for pending prompts", async 
 
     const owner = await SessionQueueOwner.start(lease, {
       cancelPrompt: async () => false,
+      closeSession: async () => false,
       setSessionMode: async () => {
         // no-op
       },
@@ -628,6 +630,7 @@ test("SessionQueueOwner rejects prompts when queue depth exceeds the configured 
       lease,
       {
         cancelPrompt: async () => false,
+        closeSession: async () => false,
         setSessionMode: async () => {
           // no-op
         },

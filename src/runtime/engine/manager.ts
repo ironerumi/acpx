@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import type { SetSessionConfigOptionResponse } from "@agentclientprotocol/sdk";
 import { AcpClient } from "../../acp/client.js";
 import { normalizeOutputError } from "../../acp/error-normalization.js";
 import { extractAcpError, isAcpResourceNotFoundError } from "../../acp/error-shapes.js";
 import { withTimeout } from "../../async-control.js";
 import { textPrompt, type PromptInput } from "../../prompt-content.js";
+import { applyConfigOptionsToRecord } from "../../session/config-options.js";
 import {
   cloneSessionAcpxState,
   cloneSessionConversation,
@@ -69,18 +69,6 @@ function createDeferred<T>(): Deferred<T> {
     reject = rej;
   });
   return { promise, resolve, reject };
-}
-
-function applyConfigOptionsToRecord(
-  record: SessionRecord,
-  configOptions: SetSessionConfigOptionResponse["configOptions"] | undefined,
-): void {
-  if (!configOptions) {
-    return;
-  }
-  const acpxState = cloneSessionAcpxState(record.acpx) ?? {};
-  acpxState.config_options = structuredClone(configOptions);
-  record.acpx = acpxState;
 }
 
 class AsyncEventQueue {
@@ -230,6 +218,7 @@ function legacyTerminalEventFromTurnResult(result: AcpRuntimeTurnResult): AcpRun
       type: "error",
       message: result.error.message,
       ...(result.error.code ? { code: result.error.code } : {}),
+      ...(result.error.detailCode ? { detailCode: result.error.detailCode } : {}),
       ...(result.error.retryable === undefined ? {} : { retryable: result.error.retryable }),
     };
   }
@@ -404,14 +393,19 @@ export class AcpRuntimeManager {
       await client.start();
       let sessionId: string;
       let agentSessionId: string | undefined;
+      let sessionResult:
+        | Awaited<ReturnType<AcpClient["createSession"]>>
+        | Awaited<ReturnType<AcpClient["loadSession"]>>;
       if (input.resumeSessionId) {
         const loaded = await client.loadSession(input.resumeSessionId, cwd);
         sessionId = input.resumeSessionId;
         agentSessionId = loaded.agentSessionId;
+        sessionResult = loaded;
       } else {
         const created = await client.createSession(cwd);
         sessionId = created.sessionId;
         agentSessionId = created.agentSessionId;
+        sessionResult = created;
       }
       const record = createInitialRecord({
         recordId: createRecordId(input.sessionKey, input.mode),
@@ -424,6 +418,7 @@ export class AcpRuntimeManager {
       this.closingActiveRecords.delete(record.acpxRecordId);
       record.protocolVersion = client.initializeResult?.protocolVersion;
       record.agentCapabilities = client.initializeResult?.agentCapabilities;
+      applyConfigOptionsToRecord(record, sessionResult);
       applyLifecycleSnapshotToRecord(record, client.getAgentLifecycleSnapshot());
       await this.options.sessionStore.save(record);
       if (input.mode === "persistent") {
@@ -721,6 +716,7 @@ export class AcpRuntimeManager {
           error: {
             message: normalized.message,
             ...(normalized.code ? { code: normalized.code } : {}),
+            ...(normalized.detailCode ? { detailCode: normalized.detailCode } : {}),
             ...(normalized.retryable !== undefined ? { retryable: normalized.retryable } : {}),
           },
         });
@@ -837,14 +833,14 @@ export class AcpRuntimeManager {
     let targetRecord = record;
     if (controller) {
       const response = await controller.setSessionConfigOption(key, value);
-      applyConfigOptionsToRecord(targetRecord, response?.configOptions);
+      applyConfigOptionsToRecord(targetRecord, response);
     } else {
       const result = await this.withRuntimeControlSession(
         record,
         sessionMode,
         async ({ client, sessionId, record: connectedRecord }) => {
           const response = await client.setSessionConfigOption(sessionId, key, value);
-          applyConfigOptionsToRecord(connectedRecord, response?.configOptions);
+          applyConfigOptionsToRecord(connectedRecord, response);
           if (key === "mode") {
             setDesiredModeId(connectedRecord, value);
           } else {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SetSessionConfigOptionResponse } from "@agentclientprotocol/sdk";
+import { AcpxOperationalError } from "../src/errors.js";
 import { AcpRuntimeManager } from "../src/runtime/engine/manager.js";
 import type {
   AcpRuntimeEvent,
@@ -26,8 +27,18 @@ type FakeClient = {
   };
   start: () => Promise<void>;
   close: () => Promise<void>;
-  createSession: (cwd: string) => Promise<{ sessionId: string; agentSessionId?: string }>;
-  loadSession: (sessionId: string, cwd: string) => Promise<{ agentSessionId?: string }>;
+  createSession: (cwd: string) => Promise<{
+    sessionId: string;
+    agentSessionId?: string;
+    configOptions?: SetSessionConfigOptionResponse["configOptions"];
+  }>;
+  loadSession: (
+    sessionId: string,
+    cwd: string,
+  ) => Promise<{
+    agentSessionId?: string;
+    configOptions?: SetSessionConfigOptionResponse["configOptions"];
+  }>;
   hasReusableSession: (sessionId: string) => boolean;
   supportsLoadSession: () => boolean;
   supportsCloseSession?: () => boolean;
@@ -143,12 +154,35 @@ test("AcpRuntimeManager creates and resumes sessions through the client", async 
       close: async () => {},
       createSession: async (cwd) => {
         assert.equal(cwd, "/workspace");
-        return { sessionId: "new-session", agentSessionId: "agent-session" };
+        return {
+          sessionId: "new-session",
+          agentSessionId: "agent-session",
+          configOptions: [
+            {
+              id: "mode",
+              name: "Mode",
+              type: "select",
+              currentValue: "ask",
+              options: [{ value: "ask", name: "Ask" }],
+            },
+          ],
+        };
       },
       loadSession: async (sessionId, cwd) => {
         assert.equal(sessionId, "resume-session");
         assert.equal(cwd, "/workspace");
-        return { agentSessionId: "resumed-agent" };
+        return {
+          agentSessionId: "resumed-agent",
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              type: "select",
+              currentValue: "fast",
+              options: [{ value: "fast", name: "Fast" }],
+            },
+          ],
+        };
       },
       hasReusableSession: () => false,
       supportsLoadSession: () => true,
@@ -181,6 +215,10 @@ test("AcpRuntimeManager creates and resumes sessions through the client", async 
   assert.equal(created.acpSessionId, "new-session");
   assert.equal(created.agentSessionId, "agent-session");
   assert.equal(created.protocolVersion, 1);
+  assert.deepEqual(
+    created.acpx?.config_options?.map((option) => option.id),
+    ["mode"],
+  );
   assert.equal(created.eventLog.segment_count > 0, true);
   assert.match(created.eventLog.active_path, /created-session/);
 
@@ -192,6 +230,10 @@ test("AcpRuntimeManager creates and resumes sessions through the client", async 
   });
   assert.equal(resumed.acpSessionId, "resume-session");
   assert.equal(resumed.agentSessionId, "resumed-agent");
+  assert.deepEqual(
+    resumed.acpx?.config_options?.map((option) => option.id),
+    ["model"],
+  );
   assert.equal(constructed, 2);
 });
 
@@ -1523,7 +1565,12 @@ test("AcpRuntimeManager surfaces normalized prompt failures", async () => {
           loadSessionWithOptions: async () => ({ agentSessionId: "unused" }),
           getAgentLifecycleSnapshot: () => ({ running: true }),
           prompt: async () => {
-            throw new Error("prompt exploded");
+            throw new AcpxOperationalError("prompt exploded", {
+              outputCode: "RUNTIME",
+              detailCode: "AGENT_DISCONNECTED",
+              origin: "acp",
+              retryable: true,
+            });
           },
           requestCancelActivePrompt: async () => false,
           hasActivePrompt: () => false,
@@ -1545,8 +1592,33 @@ test("AcpRuntimeManager surfaces normalized prompt failures", async () => {
   const { events, result } = await collectTurn(turn);
 
   assert.deepEqual(events, []);
-  assert.equal(result.status, "failed");
-  assert.match(result.error?.message ?? "", /prompt exploded/);
+  assert.deepEqual(result, {
+    status: "failed",
+    error: {
+      code: "RUNTIME",
+      detailCode: "AGENT_DISCONNECTED",
+      message: "prompt exploded",
+      retryable: true,
+    },
+  });
+  const legacyEvents = await collectEvents(
+    manager.runTurn({
+      handle: createHandle("error-session"),
+      text: "hello",
+      mode: "prompt",
+      sessionMode: "persistent",
+      requestId: "req-error-legacy",
+    }),
+  );
+  assert.deepEqual(legacyEvents, [
+    {
+      type: "error",
+      code: "RUNTIME",
+      detailCode: "AGENT_DISCONNECTED",
+      message: "prompt exploded",
+      retryable: true,
+    },
+  ]);
 });
 
 test("AcpRuntimeManager rejects unsupported runtime attachment media types", async () => {
@@ -1649,6 +1721,7 @@ test("AcpRuntimeManager fails persistent turns clearly when session/load is unav
     status: "failed",
     error: {
       code: "RUNTIME",
+      detailCode: "SESSION_RESUME_REQUIRED",
       message:
         "Persistent ACP session persistent-backend-session could not be resumed: agent does not support session/load",
       retryable: true,

@@ -67,12 +67,20 @@ export type QueueSetConfigOptionRequest = {
   timeoutMs?: number;
 };
 
+export type QueueCloseSessionRequest = {
+  type: "close_session";
+  requestId: string;
+  ownerGeneration?: number;
+  timeoutMs?: number;
+};
+
 export type QueueRequest =
   | QueueSubmitRequest
   | QueueCancelRequest
   | QueueSetModeRequest
   | QueueSetModelRequest
-  | QueueSetConfigOptionRequest;
+  | QueueSetConfigOptionRequest
+  | QueueCloseSessionRequest;
 
 export type QueueOwnerAcceptedMessage = {
   type: "accepted";
@@ -122,6 +130,13 @@ export type QueueOwnerSetConfigOptionResultMessage = {
   response: SetSessionConfigOptionResponse;
 };
 
+export type QueueOwnerCloseSessionResultMessage = {
+  type: "close_session_result";
+  requestId: string;
+  ownerGeneration?: number;
+  closed: boolean;
+};
+
 export type QueueOwnerErrorMessage = {
   type: "error";
   requestId: string;
@@ -143,6 +158,7 @@ export type QueueOwnerMessage =
   | QueueOwnerSetModeResultMessage
   | QueueOwnerSetModelResultMessage
   | QueueOwnerSetConfigOptionResultMessage
+  | QueueOwnerCloseSessionResultMessage
   | QueueOwnerErrorMessage;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -308,6 +324,15 @@ export function parseQueueRequest(raw: unknown): QueueRequest | null {
       type: "cancel_prompt",
       requestId: request.requestId,
       ownerGeneration,
+    };
+  }
+
+  if (request.type === "close_session") {
+    return {
+      type: "close_session",
+      requestId: request.requestId,
+      ownerGeneration,
+      timeoutMs,
     };
   }
 

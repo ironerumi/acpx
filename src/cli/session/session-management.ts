@@ -1,6 +1,7 @@
 import { AcpClient, type SessionCreateResult } from "../../acp/client.js";
 import { formatErrorMessage } from "../../acp/error-normalization.js";
 import { withInterrupt, withTimeout } from "../../async-control.js";
+import { applyConfigOptionsToRecord } from "../../session/config-options.js";
 import { createSessionConversation } from "../../session/conversation-model.js";
 import { defaultSessionEventLog } from "../../session/event-log.js";
 import { setCurrentModelId, syncAdvertisedModelState } from "../../session/mode-preference.js";
@@ -79,6 +80,7 @@ async function createSessionRecordWithClient(
   await withTimeout(client.start(), options.timeoutMs);
   let sessionId: string;
   let agentSessionId: string | undefined;
+  let sessionResult: Awaited<ReturnType<AcpClient["createSession" | "loadSession"]>>;
   let sessionModels: SessionCreateResult["models"];
   let requestedModelApplied = false;
 
@@ -96,6 +98,7 @@ async function createSessionRecordWithClient(
       );
       sessionId = options.resumeSessionId;
       agentSessionId = normalizeRuntimeSessionId(loadedSession.agentSessionId);
+      sessionResult = loadedSession;
       sessionModels = loadedSession.models;
       requestedModelApplied = await applyRequestedModelIfAdvertised({
         client,
@@ -117,6 +120,7 @@ async function createSessionRecordWithClient(
     const createdSession = await withTimeout(client.createSession(cwd), options.timeoutMs);
     sessionId = createdSession.sessionId;
     agentSessionId = normalizeRuntimeSessionId(createdSession.agentSessionId);
+    sessionResult = createdSession;
     sessionModels = createdSession.models;
     requestedModelApplied = await applyRequestedModelIfAdvertised({
       client,
@@ -154,6 +158,7 @@ async function createSessionRecordWithClient(
   };
 
   persistSessionOptions(record, options.sessionOptions);
+  applyConfigOptionsToRecord(record, sessionResult);
   syncAdvertisedModelState(record, sessionModels);
   if (requestedModelApplied) {
     setCurrentModelId(record, options.sessionOptions?.model);

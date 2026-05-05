@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
 import { randomUUID } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { Readable, Writable } from "node:stream";
 import {
   AgentSideConnection,
+  type CloseSessionRequest,
+  type CloseSessionResponse,
   PROTOCOL_VERSION,
   RequestError,
   ndJsonStream,
@@ -36,6 +39,8 @@ type MockAgentOptions = {
   newSessionMeta?: Record<string, string>;
   loadSessionMeta?: Record<string, string>;
   supportsLoadSession: boolean;
+  supportsCloseSession: boolean;
+  closeSessionMarker?: string;
   loadSessionNotFound: boolean;
   loadSessionFailsOnEmpty: boolean;
   setSessionModeFails: boolean;
@@ -43,6 +48,7 @@ type MockAgentOptions = {
   setSessionConfigInvalidParams: boolean;
   setSessionModelFails: boolean;
   setSessionModelInvalidParams: boolean;
+  advertiseConfigOptions: boolean;
   advertiseModels: boolean;
   replayLoadSessionUpdates: boolean;
   loadReplayText: string;
@@ -300,6 +306,8 @@ function parseMockAgentOptions(argv: string[]): MockAgentOptions {
   const newSessionMeta: Record<string, string> = {};
   const loadSessionMeta: Record<string, string> = {};
   let supportsLoadSession = false;
+  let supportsCloseSession = false;
+  let closeSessionMarker: string | undefined;
   let loadSessionNotFound = false;
   let loadSessionFailsOnEmpty = false;
   let setSessionModeFails = false;
@@ -307,6 +315,7 @@ function parseMockAgentOptions(argv: string[]): MockAgentOptions {
   let setSessionConfigInvalidParams = false;
   let setSessionModelFails = false;
   let setSessionModelInvalidParams = false;
+  let advertiseConfigOptions = false;
   let advertiseModels = false;
   let replayLoadSessionUpdates = false;
   let loadReplayText = "replayed load session update";
@@ -365,9 +374,26 @@ function parseMockAgentOptions(argv: string[]): MockAgentOptions {
       continue;
     }
 
+    if (token === "--advertise-config-options") {
+      advertiseConfigOptions = true;
+      continue;
+    }
+
     if (token === "--replay-load-session-updates") {
       supportsLoadSession = true;
       replayLoadSessionUpdates = true;
+      continue;
+    }
+
+    if (token === "--supports-close-session") {
+      supportsCloseSession = true;
+      continue;
+    }
+
+    if (token === "--close-session-marker") {
+      supportsCloseSession = true;
+      closeSessionMarker = parseOptionValue(argv, index + 1, token);
+      index += 1;
       continue;
     }
 
@@ -416,6 +442,8 @@ function parseMockAgentOptions(argv: string[]): MockAgentOptions {
     newSessionMeta: Object.keys(newSessionMeta).length > 0 ? { ...newSessionMeta } : undefined,
     loadSessionMeta: Object.keys(loadSessionMeta).length > 0 ? { ...loadSessionMeta } : undefined,
     supportsLoadSession,
+    supportsCloseSession,
+    closeSessionMarker,
     loadSessionNotFound,
     loadSessionFailsOnEmpty,
     setSessionModeFails,
@@ -423,6 +451,7 @@ function parseMockAgentOptions(argv: string[]): MockAgentOptions {
     setSessionConfigInvalidParams,
     setSessionModelFails,
     setSessionModelInvalidParams,
+    advertiseConfigOptions,
     advertiseModels,
     replayLoadSessionUpdates,
     loadReplayText,
@@ -515,7 +544,10 @@ class MockAgent implements Agent {
     return {
       protocolVersion: PROTOCOL_VERSION,
       authMethods: [],
-      agentCapabilities: this.options.supportsLoadSession ? { loadSession: true } : {},
+      agentCapabilities: {
+        ...(this.options.supportsLoadSession ? { loadSession: true } : {}),
+        ...(this.options.supportsCloseSession ? { sessionCapabilities: { close: {} } } : {}),
+      },
     };
   }
 
@@ -539,6 +571,11 @@ class MockAgent implements Agent {
 
     if (this.options.advertiseModels) {
       response.models = buildModelsState(DEFAULT_MODEL_ID);
+    }
+    if (this.options.advertiseConfigOptions) {
+      response.configOptions = buildConfigOptions(
+        this.sessions.get(sessionId) ?? createSessionState(false),
+      );
     }
 
     return response;
@@ -584,8 +621,21 @@ class MockAgent implements Agent {
       const session = this.sessions.get(params.sessionId);
       response.models = buildModelsState(session?.modelId ?? DEFAULT_MODEL_ID);
     }
+    if (this.options.advertiseConfigOptions) {
+      response.configOptions = buildConfigOptions(
+        this.sessions.get(params.sessionId) ?? createSessionState(false),
+      );
+    }
 
     return response;
+  }
+
+  async closeSession(params: CloseSessionRequest): Promise<CloseSessionResponse> {
+    this.sessions.delete(params.sessionId);
+    if (this.options.closeSessionMarker) {
+      writeFileSync(this.options.closeSessionMarker, `${params.sessionId}\n`, { flag: "a" });
+    }
+    return {};
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {

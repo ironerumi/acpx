@@ -116,12 +116,14 @@ export type AcpRuntimeEvent =
       type: "error";
       message: string;
       code?: string;
+      detailCode?: string;
       retryable?: boolean;
     };
 
 export type AcpRuntimeTurnResultError = {
   message: string;
   code?: string;
+  detailCode?: string;
   retryable?: boolean;
 };
 

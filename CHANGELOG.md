@@ -12,6 +12,9 @@ Repo: https://github.com/openclaw/acpx
 
 ### Fixes
 
+- Runtime/embedding: preserve normalized ACP `detailCode` values on failed turn results and legacy error events, so embedders can branch on stable error detail codes. (#288) Thanks @kunchenguid.
+- Runtime/config: persist advertised `configOptions` from `session/new` and `session/load` and expose their keys through handle-aware runtime capabilities. (#282) Thanks @samithaj.
+- CLI/queue: ask active queue owners to send ACP `session/close` before `sessions close` terminates their adapter process. (#283) Thanks @codefromthecrypt.
 - CLI/models: fail clearly when `--model` targets a non-Claude ACP agent that does not advertise ACP model support, and reject model ids outside an adapter's advertised `availableModels` instead of silently falling back to the adapter default.
 - Windows/Claude: resolve the `claude.exe` executable from PATH before spawning Claude ACP sessions, so native Windows launches do not depend on shell-specific command lookup. (#289) Thanks @MikeChongCan.
 - Client/ACP: send `session/close` from `closeSession()` instead of the experimental `nes/close` method, so adapters without NES support can tear down sessions cleanly. (#291) Thanks @hexsprite.

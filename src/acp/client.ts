@@ -26,6 +26,7 @@ import {
   type WaitForTerminalExitResponse,
   type WriteTextFileRequest,
   type WriteTextFileResponse,
+  type SessionConfigOption,
   type SessionModelState,
 } from "@agentclientprotocol/sdk";
 import { resolveBuiltInAgentLaunch } from "../agent-registry.js";
@@ -116,11 +117,13 @@ type LoadSessionOptions = {
 export type SessionCreateResult = {
   sessionId: string;
   agentSessionId?: string;
+  configOptions?: SessionConfigOption[];
   models?: SessionModelState;
 };
 
 export type SessionLoadResult = {
   agentSessionId?: string;
+  configOptions?: SessionConfigOption[];
   models?: SessionModelState;
 };
 
@@ -671,6 +674,7 @@ export class AcpClient {
     return {
       sessionId: result.sessionId,
       agentSessionId: extractRuntimeSessionId(result._meta),
+      configOptions: result.configOptions ?? undefined,
       models: result.models ?? undefined,
     };
   }
@@ -717,6 +721,7 @@ export class AcpClient {
 
     return {
       agentSessionId: extractRuntimeSessionId(response?._meta),
+      configOptions: response?.configOptions ?? undefined,
       models: response?.models ?? undefined,
     };
   }
