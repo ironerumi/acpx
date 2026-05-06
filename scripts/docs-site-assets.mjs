@@ -56,10 +56,10 @@ a:hover{text-decoration:underline;text-underline-offset:.2em}
 .sidebar-head{display:flex;align-items:center;gap:10px;margin-bottom:24px}
 .brand{display:flex;align-items:center;gap:11px;color:var(--ink);text-decoration:none;flex:1;min-width:0}
 .brand:hover{text-decoration:none}
-.brand .mark{flex:0 0 34px;width:34px;height:34px;border-radius:9px;background:var(--ink);position:relative;overflow:hidden;display:grid;place-items:center;box-shadow:0 1px 0 rgba(255,255,255,.05) inset,0 8px 24px -10px rgba(14,165,233,.45)}
-.brand .mark::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 120% at 0% 0%,rgba(14,165,233,.55),transparent 55%),radial-gradient(120% 120% at 100% 100%,rgba(168,85,247,.55),transparent 55%);pointer-events:none}
-.brand .mark::after{content:"";position:absolute;inset:1px;border-radius:8px;border:1px solid rgba(255,255,255,.08);pointer-events:none}
-.brand .mark svg{position:relative;z-index:1;width:20px;height:20px;display:block}
+.brand .mark{flex:0 0 34px;width:34px;height:34px;border-radius:8px;background:linear-gradient(145deg,#08111f 0%,#101827 58%,#172554 100%);position:relative;overflow:hidden;display:grid;place-items:center;box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 10px 24px -13px rgba(14,165,233,.7)}
+.brand .mark::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(125,211,252,.22),transparent 42%),linear-gradient(315deg,rgba(167,139,250,.2),transparent 48%);pointer-events:none}
+.brand .mark::after{content:"";position:absolute;inset:1px;border-radius:7px;border:1px solid rgba(255,255,255,.1);pointer-events:none}
+.brand .mark svg{position:relative;z-index:1;width:23px;height:23px;display:block}
 .brand .mark .cursor{transform-origin:center;animation:acpx-blink 1.2s steps(2,jump-none) infinite}
 @keyframes acpx-blink{0%,49%{opacity:1}50%,100%{opacity:.25}}
 @media (prefers-reduced-motion: reduce){.brand .mark .cursor{animation:none}}
@@ -273,24 +273,29 @@ export function themeToggleHtml() {
 }
 
 export function brandMarkHtml() {
-  return `<span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 7.5 L11 12 L5 16.5" stroke="#7dd3fc" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect class="cursor" x="13" y="14.6" width="7" height="2.4" rx="1.2" fill="#c4b5fd"/></svg></span>`;
+  return `<span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4.8 6.8 10 12l-5.2 5.2" stroke="#7dd3fc" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.2 7.2h2.9c1.7 0 3.1 1.4 3.1 3.1v.5c0 1.7-1.4 3.1-3.1 3.1h-1.4c-1.7 0-3.1 1.4-3.1 3.1v.5" stroke="#a78bfa" stroke-width="1.8" stroke-linecap="round"/><circle cx="13.2" cy="7.2" r="1.6" fill="#7dd3fc"/><circle cx="19.2" cy="12" r="1.6" fill="#a78bfa"/><rect class="cursor" x="13.2" y="16.2" width="6.6" height="2.5" rx="1.25" fill="#e0e7ff"/></svg></span>`;
 }
 
 export function faviconSvg() {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="acpx">
 <defs>
   <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-    <stop offset="0" stop-color="#0b0e14"/>
-    <stop offset="1" stop-color="#1a2230"/>
+    <stop offset="0" stop-color="#08111f"/>
+    <stop offset="0.58" stop-color="#101827"/>
+    <stop offset="1" stop-color="#172554"/>
   </linearGradient>
-  <linearGradient id="ring" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-    <stop offset="0" stop-color="#0ea5e9"/>
-    <stop offset="1" stop-color="#a855f7"/>
+  <linearGradient id="wash" x1="6" y1="5" x2="58" y2="59" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#7dd3fc" stop-opacity="0.26"/>
+    <stop offset="1" stop-color="#a78bfa" stop-opacity="0.22"/>
   </linearGradient>
 </defs>
 <rect width="64" height="64" rx="14" fill="url(#bg)"/>
-<rect x="1.5" y="1.5" width="61" height="61" rx="13" fill="none" stroke="url(#ring)" stroke-width="2" opacity="0.7"/>
-<path d="M14 18 L28 32 L14 46" fill="none" stroke="#7dd3fc" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="32" y="40" width="20" height="6" rx="3" fill="#c4b5fd"/>
+<rect width="64" height="64" rx="14" fill="url(#wash)"/>
+<rect x="1.5" y="1.5" width="61" height="61" rx="12.5" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.12"/>
+<path d="M14 18 28 32 14 46" fill="none" stroke="#7dd3fc" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M35 20h6c4.4 0 8 3.6 8 8v1.2c0 4.4-3.6 8-8 8h-2.5c-4.4 0-8 3.6-8 8V46" fill="none" stroke="#a78bfa" stroke-width="4.5" stroke-linecap="round"/>
+<circle cx="35" cy="20" r="4" fill="#7dd3fc"/>
+<circle cx="49" cy="32" r="4" fill="#a78bfa"/>
+<rect x="34" y="44" width="17" height="6" rx="3" fill="#e0e7ff"/>
 </svg>`;
 }
